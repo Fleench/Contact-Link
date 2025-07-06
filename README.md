@@ -9,5 +9,7 @@ Contact Link synchronizes your Obsidian vault with a CardDAV server so your note
 - Create or update notes in a chosen folder when syncing.
 - View a simple dashboard table of all contacts with links to call or email.
 - Basic settings for server URL, credentials and note folder.
+- Check authentication from the settings tab.
+- Manual sync button to push and pull changes.
 
 This repository contains only a minimal example implementation. CardDAV parsing and two-way updates require further development.
