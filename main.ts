@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting, TFile, normalizePath, Notice, stringifyYaml } from "obsidian";
+import { App, Plugin, PluginSettingTab, Setting, TFile, normalizePath, Notice, stringifyYaml, requestUrl } from "obsidian";
 import { randomUUID } from "crypto";
 
 interface ContactLinkSettings {
@@ -91,13 +91,14 @@ export default class ContactLinkPlugin extends Plugin {
             return;
         }
         try {
-            const res = await fetch(this.settings.carddavUrl, {
+            const res = await requestUrl({
+                url: this.settings.carddavUrl,
                 method: 'OPTIONS',
                 headers: {
                     'Authorization': 'Basic ' + Buffer.from(`${this.settings.username}:${this.settings.password}`).toString('base64')
                 }
             });
-            if (res.ok) {
+            if (res.status >= 200 && res.status < 300) {
                 new Notice('Authentication successful');
             } else {
                 new Notice('Authentication failed');
@@ -127,7 +128,8 @@ export default class ContactLinkPlugin extends Plugin {
             };
             const vcard = buildVCard(contact);
             const url = `${base}/${contact.uid}.vcf`;
-            await fetch(url, {
+            await requestUrl({
+                url,
                 method: 'PUT',
                 headers: {
                     'Authorization': auth,
@@ -142,7 +144,8 @@ export default class ContactLinkPlugin extends Plugin {
         if (!this.settings.carddavUrl) return [];
         try {
             const auth = 'Basic ' + Buffer.from(`${this.settings.username}:${this.settings.password}`).toString('base64');
-            const list = await fetch(this.settings.carddavUrl, {
+            const list = await requestUrl({
+                url: this.settings.carddavUrl,
                 method: 'PROPFIND',
                 headers: {
                     'Authorization': auth,
@@ -150,15 +153,15 @@ export default class ContactLinkPlugin extends Plugin {
                 },
                 body: '<?xml version="1.0"?><propfind xmlns="DAV:"><prop><href/></prop></propfind>'
             });
-            if (!list.ok) return [];
-            const xml = await list.text();
+            if (list.status < 200 || list.status >= 300) return [];
+            const xml = list.text;
             const hrefs = Array.from(xml.matchAll(/<href>([^<]+\.vcf)<\/href>/g)).map(m => m[1]);
             const contacts: Contact[] = [];
             for (const href of hrefs) {
                 const url = new URL(href, this.settings.carddavUrl).toString();
-                const res = await fetch(url, { headers: { 'Authorization': auth } });
-                if (!res.ok) continue;
-                const card = await res.text();
+                const res = await requestUrl({ url, headers: { 'Authorization': auth } });
+                if (res.status < 200 || res.status >= 300) continue;
+                const card = res.text;
                 const c = parseVCard(card);
                 if (c.uid) contacts.push(c);
             }
