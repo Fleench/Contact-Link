@@ -53,7 +53,57 @@ export default class ContactLinkPlugin extends Plugin {
         for (const c of contacts) {
             await this.upsertContactNote(c);
         }
+        await this.pushContactsToCardDAV();
         new Notice(`Synced ${contacts.length} contacts`);
+    }
+
+    async checkAuth() {
+        if (!this.settings.carddavUrl) {
+            new Notice('CardDAV URL not set');
+            return;
+        }
+        try {
+            const res = await fetch(this.settings.carddavUrl, {
+                method: 'OPTIONS',
+                headers: {
+                    'Authorization': 'Basic ' + Buffer.from(`${this.settings.username}:${this.settings.password}`).toString('base64')
+                }
+            });
+            if (res.ok) {
+                new Notice('Authentication successful');
+            } else {
+                new Notice('Authentication failed');
+            }
+        } catch (e) {
+            console.error(e);
+            new Notice('Authentication failed');
+        }
+    }
+
+    async pushContactsToCardDAV() {
+        if (!this.settings.carddavUrl) return;
+        const folder = normalizePath(this.settings.contactFolder);
+        for (const file of this.app.vault.getMarkdownFiles()) {
+            if (!file.path.startsWith(folder)) continue;
+            const cache = this.app.metadataCache.getFileCache(file);
+            const fm: any = cache?.frontmatter || {};
+            const lines: string[] = ['BEGIN:VCARD', 'VERSION:3.0'];
+            lines.push(`UID:${fm.uid ?? ''}`);
+            if (fm.fullName) lines.push(`FN:${fm.fullName}`);
+            if (fm.email) lines.push(`EMAIL:${fm.email}`);
+            if (fm.phone) lines.push(`TEL:${fm.phone}`);
+            if (fm.birthday) lines.push(`BDAY:${fm.birthday}`);
+            if (fm.company) lines.push(`ORG:${fm.company}`);
+            lines.push('END:VCARD');
+            await fetch(this.settings.carddavUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Basic ' + Buffer.from(`${this.settings.username}:${this.settings.password}`).toString('base64'),
+                    'Content-Type': 'text/vcard'
+                },
+                body: lines.join('\n')
+            }).catch(e => console.error(e));
+        }
     }
 
     async loadContactsFromCardDAV(): Promise<Contact[]> {
@@ -188,6 +238,21 @@ class ContactLinkSettingTab extends PluginSettingTab {
                 .onChange(async (value) => {
                     this.plugin.settings.contactFolder = value.trim() || 'Contacts';
                     await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .addButton(btn => btn
+                .setButtonText('Check authentication')
+                .onClick(async () => {
+                    await this.plugin.checkAuth();
+                }));
+
+        new Setting(containerEl)
+            .addButton(btn => btn
+                .setButtonText('Sync now')
+                .setCta()
+                .onClick(async () => {
+                    await this.plugin.syncContacts();
                 }));
     }
 }
