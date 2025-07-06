@@ -13,3 +13,13 @@ Contact Link synchronizes your Obsidian vault with a CardDAV server so your note
 - Manual sync button to push and pull changes.
 
 This repository contains only a minimal example implementation. CardDAV parsing and two-way updates require further development.
+
+### Zoho CardDAV Setup
+
+Set the CardDAV URL to:
+
+```
+https://contacts.zoho.com/dav/<your-email>/contacts/
+```
+
+Use your Zoho credentials for authentication.

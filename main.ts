@@ -1,4 +1,5 @@
 import { App, Plugin, PluginSettingTab, Setting, TFile, normalizePath, Notice, stringifyYaml } from "obsidian";
+import { randomUUID } from "crypto";
 
 interface ContactLinkSettings {
     carddavUrl: string;
@@ -21,6 +22,33 @@ interface Contact {
     email?: string;
     birthday?: string;
     company?: string;
+}
+
+function parseVCard(text: string): Contact {
+    const c: Contact = { uid: '' };
+    text.split(/\r?\n/).forEach(line => {
+        const [key, ...rest] = line.split(':');
+        const value = rest.join(':').trim();
+        if (key === 'UID') c.uid = value;
+        if (key === 'FN') c.fullName = value;
+        if (key.startsWith('EMAIL')) c.email = value;
+        if (key.startsWith('TEL')) c.phone = value;
+        if (key.startsWith('BDAY')) c.birthday = value;
+        if (key.startsWith('ORG')) c.company = value;
+    });
+    return c;
+}
+
+function buildVCard(contact: Contact): string {
+    const lines: string[] = ['BEGIN:VCARD', 'VERSION:3.0'];
+    lines.push(`UID:${contact.uid}`);
+    if (contact.fullName) lines.push(`FN:${contact.fullName}`);
+    if (contact.email) lines.push(`EMAIL:${contact.email}`);
+    if (contact.phone) lines.push(`TEL:${contact.phone}`);
+    if (contact.birthday) lines.push(`BDAY:${contact.birthday}`);
+    if (contact.company) lines.push(`ORG:${contact.company}`);
+    lines.push('END:VCARD');
+    return lines.join('\r\n');
 }
 
 export default class ContactLinkPlugin extends Plugin {
@@ -83,25 +111,29 @@ export default class ContactLinkPlugin extends Plugin {
     async pushContactsToCardDAV() {
         if (!this.settings.carddavUrl) return;
         const folder = normalizePath(this.settings.contactFolder);
+        const base = this.settings.carddavUrl.replace(/\/$/, "");
+        const auth = 'Basic ' + Buffer.from(`${this.settings.username}:${this.settings.password}`).toString('base64');
         for (const file of this.app.vault.getMarkdownFiles()) {
             if (!file.path.startsWith(folder)) continue;
             const cache = this.app.metadataCache.getFileCache(file);
             const fm: any = cache?.frontmatter || {};
-            const lines: string[] = ['BEGIN:VCARD', 'VERSION:3.0'];
-            lines.push(`UID:${fm.uid ?? ''}`);
-            if (fm.fullName) lines.push(`FN:${fm.fullName}`);
-            if (fm.email) lines.push(`EMAIL:${fm.email}`);
-            if (fm.phone) lines.push(`TEL:${fm.phone}`);
-            if (fm.birthday) lines.push(`BDAY:${fm.birthday}`);
-            if (fm.company) lines.push(`ORG:${fm.company}`);
-            lines.push('END:VCARD');
-            await fetch(this.settings.carddavUrl, {
-                method: 'POST',
+            const contact: Contact = {
+                uid: fm.uid || randomUUID(),
+                fullName: fm.fullName || file.basename,
+                phone: fm.phone,
+                email: fm.email,
+                birthday: fm.birthday,
+                company: fm.company,
+            };
+            const vcard = buildVCard(contact);
+            const url = `${base}/${contact.uid}.vcf`;
+            await fetch(url, {
+                method: 'PUT',
                 headers: {
-                    'Authorization': 'Basic ' + Buffer.from(`${this.settings.username}:${this.settings.password}`).toString('base64'),
+                    'Authorization': auth,
                     'Content-Type': 'text/vcard'
                 },
-                body: lines.join('\n')
+                body: vcard
             }).catch(e => console.error(e));
         }
     }
@@ -109,28 +141,29 @@ export default class ContactLinkPlugin extends Plugin {
     async loadContactsFromCardDAV(): Promise<Contact[]> {
         if (!this.settings.carddavUrl) return [];
         try {
-            const res = await fetch(this.settings.carddavUrl, {
-                headers: { 'Authorization': 'Basic ' + Buffer.from(`${this.settings.username}:${this.settings.password}`).toString('base64') }
+            const auth = 'Basic ' + Buffer.from(`${this.settings.username}:${this.settings.password}`).toString('base64');
+            const list = await fetch(this.settings.carddavUrl, {
+                method: 'PROPFIND',
+                headers: {
+                    'Authorization': auth,
+                    'Depth': '1'
+                },
+                body: '<?xml version="1.0"?><propfind xmlns="DAV:"><prop><href/></prop></propfind>'
             });
-            if (!res.ok) return [];
-            const text = await res.text();
-            // Placeholder parser. Real CardDAV parsing is required.
+            if (!list.ok) return [];
+            const xml = await list.text();
+            const hrefs = Array.from(xml.matchAll(/<href>([^<]+\.vcf)<\/href>/g)).map(m => m[1]);
             const contacts: Contact[] = [];
-            text.split('BEGIN:VCARD').forEach((block) => {
-                if (block.trim().length === 0) return;
-                const c: Contact = { uid: '' };
-                block.split(/\r?\n/).forEach(line => {
-                    if (line.startsWith('UID:')) c.uid = line.substring(4).trim();
-                    if (line.startsWith('FN:')) c.fullName = line.substring(3).trim();
-                    if (line.startsWith('EMAIL')) c.email = line.split(':')[1].trim();
-                    if (line.startsWith('TEL')) c.phone = line.split(':')[1].trim();
-                    if (line.startsWith('BDAY')) c.birthday = line.split(':')[1].trim();
-                    if (line.startsWith('ORG')) c.company = line.split(':')[1].trim();
-                });
+            for (const href of hrefs) {
+                const url = new URL(href, this.settings.carddavUrl).toString();
+                const res = await fetch(url, { headers: { 'Authorization': auth } });
+                if (!res.ok) continue;
+                const card = await res.text();
+                const c = parseVCard(card);
                 if (c.uid) contacts.push(c);
-            });
+            }
             return contacts;
-        } catch(e) {
+        } catch (e) {
             console.error(e);
             new Notice('Failed to fetch contacts');
             return [];
@@ -140,10 +173,12 @@ export default class ContactLinkPlugin extends Plugin {
     async upsertContactNote(contact: Contact) {
         const folderPath = normalizePath(this.settings.contactFolder);
         await this.app.vault.createFolder(folderPath).catch(()=>{});
+        if (!contact.uid) contact.uid = randomUUID();
         const filePath = `${folderPath}/${contact.fullName || contact.uid}.md`;
         const existing = this.app.vault.getAbstractFileByPath(filePath);
         const frontmatter: any = {
             uid: contact.uid,
+            fullName: contact.fullName,
             phone: contact.phone,
             email: contact.email,
             birthday: contact.birthday,
