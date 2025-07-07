@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting, TFile, normalizePath, Notice, stringifyYaml, requestUrl, DropdownComponent, SuggestModal } from "obsidian";
+import { App, Plugin, PluginSettingTab, Setting, TFile, normalizePath, Notice, stringifyYaml, requestUrl, DropdownComponent, SuggestModal, Modal} from "obsidian";
 
 function generateUUID(): string {
     if (typeof crypto !== 'undefined' && (crypto as any).randomUUID) {
@@ -70,6 +70,18 @@ interface Contact {
 interface AddressBook {
     name: string;
     url: string;
+}
+
+interface ContactInfo {
+    file: TFile;
+    name: string;
+    phone?: string;
+    email?: string;
+    birthday?: string;
+    company?: string;
+    relationship?: string;
+    mentions: number;
+    recentNotes: TFile[];
 }
 
 function parseVCard(text: string): Contact {
@@ -409,53 +421,39 @@ export default class ContactLinkPlugin extends Plugin {
         }
     }
 
-    async openDashboard() {
+async openDashboard() {
         const files = this.app.vault.getMarkdownFiles();
-        const contacts: TFile[] = [];
+        const infos: ContactInfo[] = [];
+        const backlinks = this.app.metadataCache.resolvedLinks;
         for (const f of files) {
-            const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
-            if (fm?.uid) contacts.push(f);
+            const fm: any = this.app.metadataCache.getFileCache(f)?.frontmatter;
+            if (!fm?.uid) continue;
+            const info: ContactInfo = {
+                file: f,
+                name: fm[this.settings.fieldMap.fullName] ?? f.basename,
+                phone: fm[this.settings.fieldMap.phone],
+                email: fm[this.settings.fieldMap.email],
+                birthday: fm[this.settings.fieldMap.birthday],
+                company: fm[this.settings.fieldMap.company],
+                relationship: fm[this.settings.fieldMap.relationship],
+                mentions: 0,
+                recentNotes: []
+            };
+            for (const [src, links] of Object.entries(backlinks)) {
+                if (src === f.path) continue;
+                if ((links as Record<string, number>)[f.path]) {
+                    info.mentions += (links as Record<string, number>)[f.path];
+                    const note = this.app.vault.getAbstractFileByPath(src);
+                    if (note instanceof TFile) info.recentNotes.push(note);
+                }
+            }
+            info.recentNotes.sort((a,b)=>b.stat.mtime - a.stat.mtime);
+            infos.push(info);
         }
-
-        contacts.sort((a, b) => {
-            const fma: any = this.app.metadataCache.getFileCache(a)?.frontmatter || {};
-            const fmb: any = this.app.metadataCache.getFileCache(b)?.frontmatter || {};
-            const nameA = fma[this.settings.fieldMap.fullName] ?? a.basename;
-            const nameB = fmb[this.settings.fieldMap.fullName] ?? b.basename;
-            return nameA.localeCompare(nameB);
-        });
-
-       const backlinkData = this.app.metadataCache.resolvedLinks;
-       const lines: string[] = [
-           '<table class="cl-dashboard">',
-           '<thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Mentions</th></tr></thead>',
-           '<tbody>'
-       ];
-       for (const f of contacts) {
-           const cache = this.app.metadataCache.getFileCache(f);
-           const fm: any = cache?.frontmatter || {};
-           const link = this.app.fileManager.generateMarkdownLink(f, f.path, undefined);
-           const phoneVal = fm[this.settings.fieldMap.phone];
-           const emailVal = fm[this.settings.fieldMap.email];
-           const phoneLink = phoneVal ? `[call](tel:${phoneVal})` : '';
-           const mailLink = emailVal ? `[email](mailto:${emailVal})` : '';
-           let mentions = 0;
-           for (const [src, links] of Object.entries(backlinkData)) {
-               if (src === f.path) continue;
-               if ((links as Record<string, number>)[f.path]) {
-                   mentions += (links as Record<string, number>)[f.path];
-               }
-           }
-           lines.push(`<tr><td>${link}</td><td>${phoneLink}</td><td>${mailLink}</td><td>${mentions}</td></tr>`);
-       }
-       lines.push('</tbody></table>');
-       const file = await this.app.vault.create("Contacts Dashboard.md", lines.join('\n')).catch(async existing => {
-           if (existing instanceof TFile) await this.app.vault.modify(existing, lines.join('\n'));
-       });
-        if (file instanceof TFile) {
-            await this.app.workspace.getLeaf(false).openFile(file);
-        }
+        infos.sort((a,b)=>a.name.localeCompare(b.name));
+        new DashboardModal(this.app, this, infos).open();
     }
+
 
     async updateBirthdayCalendar() {
         const events: string[] = ['BEGIN:VCALENDAR', 'VERSION:2.0'];
@@ -717,3 +715,112 @@ class ContactLinkSettingTab extends PluginSettingTab {
     }
 }
 
+
+class DashboardModal extends Modal {
+    plugin: ContactLinkPlugin;
+    contacts: ContactInfo[];
+    grid!: HTMLDivElement;
+    constructor(app: App, plugin: ContactLinkPlugin, contacts: ContactInfo[]) {
+        super(app);
+        this.plugin = plugin;
+        this.contacts = contacts;
+    }
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+        const metrics = this.computeMetrics();
+        const metricsEl = contentEl.createDiv({ cls: 'cl-metrics' });
+        metricsEl.createDiv({ text: `Total contacts: ${metrics.total}` });
+        metricsEl.createDiv({ text: `Upcoming birthdays: ${metrics.upcoming}` });
+        metricsEl.createDiv({ text: `Most mentioned: ${metrics.top.join(', ')}` });
+        const controls = contentEl.createDiv({ cls: 'cl-dashboard-controls' });
+        const searchInput = controls.createEl('input', { type: 'text', placeholder: 'Search' });
+        const filterSelect = controls.createEl('select');
+        ['all','family','friends','clients','work'].forEach(v => filterSelect.add(new Option(v.charAt(0).toUpperCase()+v.slice(1), v)));
+        const calBtn = controls.createEl('button', { text: 'Calendar view' });
+        calBtn.addEventListener('click', () => new BirthdayCalendarModal(this.app, this.plugin, this.contacts).open());
+        this.grid = contentEl.createDiv({ cls: 'cl-card-grid' });
+        const render = () => this.renderCards(searchInput.value.toLowerCase(), filterSelect.value);
+        searchInput.addEventListener('input', render);
+        filterSelect.addEventListener('change', render);
+        render();
+    }
+    computeMetrics() {
+        const total = this.contacts.length;
+        const upcoming = this.contacts.filter(c => c.birthday && this.isUpcoming(c.birthday)).length;
+        const top = [...this.contacts].sort((a,b)=>b.mentions-a.mentions).slice(0,3).map(c=>c.name);
+        return { total, upcoming, top };
+    }
+    isUpcoming(date: string) {
+        const now = new Date();
+        const b = new Date(date);
+        b.setFullYear(now.getFullYear());
+        const diff = (b.getTime() - now.getTime())/86400000;
+        return diff>=0 && diff<=30;
+    }
+    renderCards(term: string, filter: string) {
+        this.grid.empty();
+        for (const c of this.contacts) {
+            if (filter !== 'all' && (c.relationship || '').toLowerCase() !== filter) continue;
+            if (term && !((c.name||'').toLowerCase().includes(term) || (c.company||'').toLowerCase().includes(term))) continue;
+            const card = this.grid.createDiv({ cls: 'cl-card' });
+            const nameLink = card.createEl('a', { text: c.name, href: '#' });
+            nameLink.addEventListener('click', e => { e.preventDefault(); this.plugin.app.workspace.getLeaf(true).openFile(c.file); });
+            if (c.company) card.createDiv({ text: c.company });
+            if (c.phone) card.createEl('div', { text: c.phone });
+            if (c.email) card.createEl('a', { text: c.email, href: `mailto:${c.email}` });
+            if (c.birthday) {
+                const icon = this.isUpcoming(c.birthday) ? ' \uD83C\uDF82' : '';
+                card.createDiv({ text: `Birthday: ${c.birthday}${icon}` });
+            }
+            card.createDiv({ text: `Mentions: ${c.mentions}` });
+            if (c.recentNotes.length) {
+                const list = card.createEl('ul');
+                c.recentNotes.slice(0,3).forEach(f => {
+                    const li = list.createEl('li');
+                    const link = li.createEl('a', { text: f.basename, href: '#' });
+                    link.addEventListener('click', e => { e.preventDefault(); this.plugin.app.workspace.getLeaf(true).openFile(f); });
+                });
+            }
+            const actions = card.createDiv({ cls: 'cl-card-actions' });
+            if (c.phone) actions.createEl('a', { text: 'Call', href: `tel:${c.phone}` });
+            if (c.email) actions.createEl('a', { text: 'Email', href: `mailto:${c.email}` });
+        }
+    }
+}
+
+class BirthdayCalendarModal extends Modal {
+    plugin: ContactLinkPlugin;
+    contacts: ContactInfo[];
+    month: number;
+    year: number;
+    constructor(app: App, plugin: ContactLinkPlugin, contacts: ContactInfo[]) {
+        super(app);
+        this.plugin = plugin;
+        this.contacts = contacts;
+        const now = new Date();
+        this.month = now.getMonth();
+        this.year = now.getFullYear();
+    }
+    onOpen() { this.render(); }
+    render() {
+        const { contentEl } = this;
+        contentEl.empty();
+        const header = contentEl.createDiv({ cls: 'cl-cal-header' });
+        const prev = header.createEl('button', { text: '<' });
+        const title = header.createEl('span', { text: new Date(this.year, this.month).toLocaleString(undefined,{month:'long',year:'numeric'}) });
+        const next = header.createEl('button', { text: '>' });
+        prev.onclick = () => { this.month--; if(this.month<0){this.month=11;this.year--;} this.render(); };
+        next.onclick = () => { this.month++; if(this.month>11){this.month=0;this.year++;} this.render(); };
+        const grid = contentEl.createDiv({ cls: 'cl-cal-grid' });
+        const last = new Date(this.year, this.month+1, 0).getDate();
+        for (let d=1; d<=last; d++) {
+            const cell = grid.createDiv({ cls: 'cl-cal-day', text: String(d) });
+            const dateStr = `${this.year}-${String(this.month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            this.contacts.filter(c => c.birthday && c.birthday.slice(5) === dateStr.slice(5)).forEach(c => {
+                const link = cell.createEl('a', { text: c.name, href: '#' });
+                link.addEventListener('click', e => { e.preventDefault(); this.plugin.app.workspace.getLeaf(true).openFile(c.file); });
+            });
+        }
+    }
+}
