@@ -4,15 +4,14 @@ Contact Link synchronizes your Obsidian vault with a CardDAV server so your note
 
 ## Features
 
-- Connect to a CardDAV server (such as Zoho) and pull contact details.
-- Store contact fields in frontmatter (`phone`, `email`, `birthday`, `company`).
-- Create or update notes in a chosen folder when syncing.
-- View a simple dashboard table of all contacts with links to call or email.
-- Basic settings for server URL, credentials and note folder.
-- Check authentication from the settings tab.
-- Manual sync button to push and pull changes.
+- Two-way sync with your CardDAV server.
+- Customisable frontmatter mapping for contact fields.
+- Import contacts from a CSV file (`contacts.csv`).
+- Dashboard table with phone and email actions and mention counts.
+- Birthday calendar exported as an ICS file.
+- Commands to insert contact links in any note.
 
-This repository contains only a minimal example implementation. CardDAV parsing and two-way updates require further development.
+This project still provides only a lightweight example implementation but now demonstrates how a more complete contact manager could be built.
 
 ### Zoho CardDAV Setup
 
