@@ -267,6 +267,7 @@ export default class ContactLinkPlugin extends Plugin {
 
         if (!existing) {
             await this.app.vault.create(filePath, content);
+            console.log(`Synced contact ${contact.fullName || contact.uid}`);
         } else if (existing instanceof TFile) {
             const current = await this.app.vault.read(existing);
             let body = current.replace(/^---[\s\S]*?---\n/, '');
@@ -284,6 +285,7 @@ export default class ContactLinkPlugin extends Plugin {
                 body += `\n<!-- ContactLink conflict\n${diffs.join('\n')}\n-->\n`;
             }
             await this.app.vault.modify(existing, content + body);
+            console.log(`Synced contact ${contact.fullName || contact.uid}`);
         }
     }
 
