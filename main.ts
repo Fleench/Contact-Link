@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting, TFile, normalizePath, Notice, stringifyYaml, requestUrl, SuggestModal } from "obsidian";
+import { App, Plugin, PluginSettingTab, Setting, TFile, normalizePath, Notice, stringifyYaml, requestUrl, DropdownComponent, SuggestModal } from "obsidian";
 import { randomUUID } from "crypto";
 
 interface FieldMap {
@@ -40,6 +40,11 @@ interface Contact {
     email?: string;
     birthday?: string;
     company?: string;
+}
+
+interface AddressBook {
+    name: string;
+    url: string;
 }
 
 function parseVCard(text: string): Contact {
@@ -201,6 +206,40 @@ export default class ContactLinkPlugin extends Plugin {
             return [];
         }
     }
+
+    async listAddressBooks(): Promise<AddressBook[]> {
+        if (!this.settings.carddavUrl) return [];
+        const auth = 'Basic ' + Buffer.from(`${this.settings.username}:${this.settings.password}`).toString('base64');
+        try {
+            const res = await requestUrl({
+                url: this.settings.carddavUrl,
+                method: 'PROPFIND',
+                headers: {
+                    'Authorization': auth,
+                    'Depth': '1'
+                },
+                body: '<?xml version="1.0"?><propfind xmlns="DAV:"><prop><displayname/><resourcetype/></prop></propfind>'
+            });
+            if (res.status < 200 || res.status >= 300) return [];
+            const xml = res.text;
+            const parts = xml.split('<response>').slice(1);
+            const books: AddressBook[] = [];
+            for (const p of parts) {
+                if (!p.includes('<addressbook')) continue;
+                const href = p.match(/<href>([^<]+)<\/href>/)?.[1];
+                if (!href) continue;
+                const name = p.match(/<displayname>([^<]*)<\/displayname>/)?.[1] || href;
+                const url = new URL(href, this.settings.carddavUrl).toString();
+                books.push({ name, url });
+            }
+            return books;
+        } catch (e) {
+            console.error(e);
+            new Notice('Failed to fetch address books');
+            return [];
+        }
+    }
+
 
     async upsertContactNote(contact: Contact) {
         const folderPath = normalizePath(this.settings.contactFolder);
@@ -373,6 +412,27 @@ class ContactLinkSettingTab extends PluginSettingTab {
                     this.plugin.settings.carddavUrl = value;
                     await this.plugin.saveSettings();
                 }));
+
+        let dropdown!: DropdownComponent;
+        new Setting(containerEl)
+            .setName('Address book')
+            .setDesc('Choose which address book to sync')
+            .addDropdown(d => {
+                dropdown = d;
+                d.addOption('', 'Loading...');
+                d.onChange(async (value) => {
+                    this.plugin.settings.carddavUrl = value;
+                    await this.plugin.saveSettings();
+                });
+            });
+        this.plugin.listAddressBooks().then(books => {
+            dropdown.selectEl.innerHTML = '';
+            books.forEach(b => dropdown.addOption(b.url, b.name));
+            if (this.plugin.settings.carddavUrl && !books.find(b => b.url === this.plugin.settings.carddavUrl)) {
+                dropdown.addOption(this.plugin.settings.carddavUrl, this.plugin.settings.carddavUrl);
+            }
+            dropdown.setValue(this.plugin.settings.carddavUrl);
+        });
 
         new Setting(containerEl)
             .setName('Username')
