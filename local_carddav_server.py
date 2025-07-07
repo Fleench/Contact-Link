@@ -81,7 +81,7 @@ def sync_remote():
             logger.warning("PROPFIND failed with status %s", res.status_code)
             return
 
-        hrefs = re.findall(r"<href>([^<]+\.vcf)</href>", res.text)
+        hrefs = re.findall(r"<(?:\w+:)?href>([^<]+\.vcf)</(?:\w+:)?href>", res.text)
         count = 0
         for href in hrefs:
             url = urljoin(CARDDAV_URL, href)

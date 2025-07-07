@@ -189,7 +189,7 @@ export default class ContactLinkPlugin extends Plugin {
             });
             if (list.status < 200 || list.status >= 300) return [];
             const xmlDoc = new DOMParser().parseFromString(list.text, 'application/xml');
-            const hrefEls = Array.from(xmlDoc.getElementsByTagName('href'));
+            const hrefEls = Array.from(xmlDoc.getElementsByTagNameNS('DAV:', 'href'));
             const hrefs = hrefEls
                 .map(h => h.textContent || '')
                 .filter(h => h.endsWith('.vcf'));
@@ -221,25 +221,25 @@ export default class ContactLinkPlugin extends Plugin {
             const base = this.settings.carddavUrl.replace(/\/$/, '');
             // current-user-principal discovery
             let doc = await propfind(base, '0', '<?xml version="1.0"?><propfind xmlns="DAV:"><prop><current-user-principal/></prop></propfind>');
-            const principalHref = doc.getElementsByTagName('href')[0]?.textContent;
+            const principalHref = doc.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent;
             if (!principalHref) return [];
             const principalUrl = new URL(principalHref, base).toString();
 
             // addressbook-home-set discovery
             doc = await propfind(principalUrl, '0', '<?xml version="1.0"?><propfind xmlns="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav"><prop><addressbook-home-set xmlns="urn:ietf:params:xml:ns:carddav"/></prop></propfind>');
-            const homeHref = doc.getElementsByTagName('href')[0]?.textContent;
+            const homeHref = doc.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent;
             if (!homeHref) return [];
             const homeUrl = new URL(homeHref, principalUrl).toString();
 
             // list available address books
             doc = await propfind(homeUrl, '1', '<?xml version="1.0"?><propfind xmlns="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav"><prop><displayname/><resourcetype/></prop></propfind>');
-            const responses = Array.from(doc.getElementsByTagName('response'));
+            const responses = Array.from(doc.getElementsByTagNameNS('DAV:', 'response'));
             const books: AddressBook[] = [];
             for (const r of responses) {
-                if (!r.getElementsByTagName('addressbook').length) continue;
-                const href = r.getElementsByTagName('href')[0]?.textContent;
+                if (!r.getElementsByTagNameNS('urn:ietf:params:xml:ns:carddav', 'addressbook').length) continue;
+                const href = r.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent;
                 if (!href) continue;
-                const name = r.getElementsByTagName('displayname')[0]?.textContent || href;
+                const name = r.getElementsByTagNameNS('DAV:', 'displayname')[0]?.textContent || href;
                 const url = new URL(href, homeUrl).toString();
                 books.push({ name, url });
             }
