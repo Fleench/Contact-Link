@@ -1,5 +1,27 @@
 import { App, Plugin, PluginSettingTab, Setting, TFile, normalizePath, Notice, stringifyYaml, requestUrl, DropdownComponent, SuggestModal } from "obsidian";
-import { randomUUID } from "crypto";
+
+function generateUUID(): string {
+    if (typeof crypto !== 'undefined' && (crypto as any).randomUUID) {
+        return (crypto as any).randomUUID();
+    }
+    let uuid = '', i: number, random: number;
+    for (i = 0; i < 32; i++) {
+        random = Math.random() * 16 | 0;
+        if (i === 8 || i === 12 || i === 16 || i === 20) uuid += '-';
+        uuid += (i === 12 ? 4 : (i === 16 ? (random & 3 | 8) : random)).toString(16);
+    }
+    return uuid;
+}
+
+function encodeBase64(str: string): string {
+    if (typeof Buffer !== 'undefined') {
+        return Buffer.from(str, 'utf8').toString('base64');
+    }
+    if (typeof btoa !== 'undefined') {
+        return btoa(unescape(encodeURIComponent(str)));
+    }
+    return str;
+}
 
 interface FieldMap {
     fullName: string;
@@ -7,6 +29,7 @@ interface FieldMap {
     email: string;
     birthday: string;
     company: string;
+    relationship: string;
 }
 
 interface ContactLinkSettings {
@@ -29,6 +52,7 @@ const DEFAULT_SETTINGS: ContactLinkSettings = {
         email: 'email',
         birthday: 'birthday',
         company: 'company',
+        relationship: 'relationship',
     },
     birthdayCalendarPath: 'Contacts/Birthdays.ics'
 };
@@ -40,6 +64,7 @@ interface Contact {
     email?: string;
     birthday?: string;
     company?: string;
+    relationship?: string;
 }
 
 interface AddressBook {
@@ -58,6 +83,7 @@ function parseVCard(text: string): Contact {
         if (key.startsWith('TEL')) c.phone = value;
         if (key.startsWith('BDAY')) c.birthday = value;
         if (key.startsWith('ORG')) c.company = value;
+        if (key.startsWith('RELATED') || key.startsWith('X-RELATIONSHIP')) c.relationship = value;
     });
     return c;
 }
@@ -70,6 +96,7 @@ function buildVCard(contact: Contact): string {
     if (contact.phone) lines.push(`TEL:${contact.phone}`);
     if (contact.birthday) lines.push(`BDAY:${contact.birthday}`);
     if (contact.company) lines.push(`ORG:${contact.company}`);
+    if (contact.relationship) lines.push(`RELATED:${contact.relationship}`);
     lines.push('END:VCARD');
     return lines.join('\r\n');
 }
@@ -171,7 +198,7 @@ export default class ContactLinkPlugin extends Plugin {
                 url: this.settings.carddavUrl,
                 method: 'OPTIONS',
                 headers: {
-                    'Authorization': 'Basic ' + Buffer.from(`${this.settings.username}:${this.settings.password}`).toString('base64')
+                    'Authorization': 'Basic ' + encodeBase64(`${this.settings.username}:${this.settings.password}`)
                 }
             });
             if (res.status >= 200 && res.status < 300) {
@@ -189,12 +216,12 @@ export default class ContactLinkPlugin extends Plugin {
         if (!this.settings.carddavUrl) return;
         const folder = normalizePath(this.settings.contactFolder);
         const base = this.settings.carddavUrl.replace(/\/$/, "");
-        const auth = 'Basic ' + Buffer.from(`${this.settings.username}:${this.settings.password}`).toString('base64');
+        const auth = 'Basic ' + encodeBase64(`${this.settings.username}:${this.settings.password}`);
         for (const file of this.app.vault.getMarkdownFiles()) {
             if (!file.path.startsWith(folder)) continue;
             const cache = this.app.metadataCache.getFileCache(file);
             const fm: any = cache?.frontmatter || {};
-            const contact: Contact = { uid: fm.uid || randomUUID() } as Contact;
+            const contact: Contact = { uid: fm.uid || generateUUID() } as Contact;
             for (const key of Object.keys(this.settings.fieldMap) as (keyof FieldMap)[]) {
                 const prop = this.settings.fieldMap[key];
                 (contact as any)[key] = fm[prop];
@@ -217,7 +244,7 @@ export default class ContactLinkPlugin extends Plugin {
     async loadContactsFromCardDAV(): Promise<Contact[]> {
         if (!this.settings.carddavUrl) return [];
         try {
-            const auth = 'Basic ' + Buffer.from(`${this.settings.username}:${this.settings.password}`).toString('base64');
+            const auth = 'Basic ' + encodeBase64(`${this.settings.username}:${this.settings.password}`);
             const list = await requestUrl({
                 url: this.settings.carddavUrl,
                 method: 'PROPFIND',
@@ -251,7 +278,7 @@ export default class ContactLinkPlugin extends Plugin {
 
     async listAddressBooks(): Promise<AddressBook[]> {
         if (!this.settings.carddavUrl) return [];
-        const auth = 'Basic ' + Buffer.from(`${this.settings.username}:${this.settings.password}`).toString('base64');
+        const auth = 'Basic ' + encodeBase64(`${this.settings.username}:${this.settings.password}`);
         const propfind = async (url: string, depth: string, body: string) => {
             const res = await requestUrl({ url, method: 'PROPFIND', headers: { 'Authorization': auth, 'Depth': depth }, body });
             if (res.status < 200 || res.status >= 300) throw new Error(`PROPFIND ${url}`);
@@ -295,7 +322,7 @@ export default class ContactLinkPlugin extends Plugin {
     async upsertContactNote(contact: Contact) {
         const folderPath = normalizePath(this.settings.contactFolder);
         await this.app.vault.createFolder(folderPath).catch(()=>{});
-        if (!contact.uid) contact.uid = randomUUID();
+        if (!contact.uid) contact.uid = generateUUID();
         let baseName = contact.fullName ? sanitizeName(contact.fullName) : '';
         if (!baseName) baseName = contact.uid;
         const filePath = `${folderPath}/${baseName}.md`;
@@ -370,7 +397,7 @@ export default class ContactLinkPlugin extends Plugin {
             const fm: any = cache?.frontmatter || {};
             const birthday = fm[this.settings.fieldMap.birthday];
             if (birthday) {
-                const uid = fm.uid || randomUUID();
+                const uid = fm.uid || generateUUID();
                 const dt = birthday.replace(/-/g, '');
                 const name = fm[this.settings.fieldMap.fullName] || file.basename;
                 events.push('BEGIN:VEVENT');
@@ -392,7 +419,7 @@ export default class ContactLinkPlugin extends Plugin {
             const headers = rows.shift()?.split(',') || [];
             for (const row of rows) {
                 const values = row.split(',');
-                const c: Contact = { uid: randomUUID() } as Contact;
+                const c: Contact = { uid: generateUUID() } as Contact;
                 headers.forEach((h, i) => {
                     const key = h.trim();
                     const val = values[i]?.trim();
