@@ -2,14 +2,16 @@ import { App, Plugin, PluginSettingTab, Setting, TFile, normalizePath, Notice, s
 import { randomUUID } from "crypto";
 
 interface ContactLinkSettings {
-    apiBaseUrl: string;
-    accessToken: string;
+    carddavUrl: string;
+    username: string;
+    password: string;
     contactFolder: string;
 }
 
 const DEFAULT_SETTINGS: ContactLinkSettings = {
-    apiBaseUrl: 'https://contacts.zoho.com/api',
-    accessToken: '',
+    carddavUrl: '',
+    username: '',
+    password: '',
     contactFolder: 'Contacts',
 };
 
@@ -22,6 +24,33 @@ interface Contact {
     company?: string;
 }
 
+function parseVCard(text: string): Contact {
+    const c: Contact = { uid: '' };
+    text.split(/\r?\n/).forEach(line => {
+        const [key, ...rest] = line.split(':');
+        const value = rest.join(':').trim();
+        if (key === 'UID') c.uid = value;
+        if (key === 'FN') c.fullName = value;
+        if (key.startsWith('EMAIL')) c.email = value;
+        if (key.startsWith('TEL')) c.phone = value;
+        if (key.startsWith('BDAY')) c.birthday = value;
+        if (key.startsWith('ORG')) c.company = value;
+    });
+    return c;
+}
+
+function buildVCard(contact: Contact): string {
+    const lines: string[] = ['BEGIN:VCARD', 'VERSION:3.0'];
+    lines.push(`UID:${contact.uid}`);
+    if (contact.fullName) lines.push(`FN:${contact.fullName}`);
+    if (contact.email) lines.push(`EMAIL:${contact.email}`);
+    if (contact.phone) lines.push(`TEL:${contact.phone}`);
+    if (contact.birthday) lines.push(`BDAY:${contact.birthday}`);
+    if (contact.company) lines.push(`ORG:${contact.company}`);
+    lines.push('END:VCARD');
+    return lines.join('\r\n');
+}
+
 export default class ContactLinkPlugin extends Plugin {
     settings: ContactLinkSettings;
 
@@ -30,7 +59,7 @@ export default class ContactLinkPlugin extends Plugin {
 
         this.addCommand({
             id: 'sync-contacts',
-            name: 'Sync contacts with Zoho',
+            name: 'Sync contacts with CardDAV',
             callback: () => this.syncContacts()
         });
 
@@ -48,24 +77,25 @@ export default class ContactLinkPlugin extends Plugin {
     }
 
     async syncContacts() {
-        const contacts = await this.loadContactsFromZoho();
+        const contacts = await this.loadContactsFromCardDAV();
         for (const c of contacts) {
             await this.upsertContactNote(c);
         }
-        await this.pushContactsToZoho();
+        await this.pushContactsToCardDAV();
         new Notice(`Synced ${contacts.length} contacts`);
     }
 
     async checkAuth() {
-        if (!this.settings.apiBaseUrl || !this.settings.accessToken) {
-            new Notice('Zoho API settings not complete');
+        if (!this.settings.carddavUrl) {
+            new Notice('CardDAV URL not set');
             return;
         }
         try {
             const res = await requestUrl({
-                url: `${this.settings.apiBaseUrl}/contacts?per_page=1`,
+                url: this.settings.carddavUrl,
+                method: 'OPTIONS',
                 headers: {
-                    'Authorization': `Zoho-oauthtoken ${this.settings.accessToken}`
+                    'Authorization': 'Basic ' + Buffer.from(`${this.settings.username}:${this.settings.password}`).toString('base64')
                 }
             });
             if (res.status >= 200 && res.status < 300) {
@@ -79,11 +109,11 @@ export default class ContactLinkPlugin extends Plugin {
         }
     }
 
-    async pushContactsToZoho() {
-        if (!this.settings.apiBaseUrl || !this.settings.accessToken) return;
+    async pushContactsToCardDAV() {
+        if (!this.settings.carddavUrl) return;
         const folder = normalizePath(this.settings.contactFolder);
-        const base = this.settings.apiBaseUrl.replace(/\/$/, "");
-        const auth = `Zoho-oauthtoken ${this.settings.accessToken}`;
+        const base = this.settings.carddavUrl.replace(/\/$/, "");
+        const auth = 'Basic ' + Buffer.from(`${this.settings.username}:${this.settings.password}`).toString('base64');
         for (const file of this.app.vault.getMarkdownFiles()) {
             if (!file.path.startsWith(folder)) continue;
             const cache = this.app.metadataCache.getFileCache(file);
@@ -96,57 +126,44 @@ export default class ContactLinkPlugin extends Plugin {
                 birthday: fm.birthday,
                 company: fm.company,
             };
-            const payload = {
-                id: contact.uid,
-                full_name: contact.fullName,
-                phone: contact.phone,
-                email: contact.email,
-                date_of_birth: contact.birthday,
-                company: contact.company
-            };
+            const vcard = buildVCard(contact);
+            const url = `${base}/${contact.uid}.vcf`;
             await requestUrl({
-                url: `${base}/contacts/${contact.uid}`,
+                url,
                 method: 'PUT',
                 headers: {
                     'Authorization': auth,
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'text/vcard'
                 },
-                body: JSON.stringify(payload)
-            }).catch(async () => {
-                await requestUrl({
-                    url: `${base}/contacts`,
-                    method: 'POST',
-                    headers: {
-                        'Authorization': auth,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(payload)
-                }).catch(e => console.error(e));
-            });
+                body: vcard
+            }).catch(e => console.error(e));
         }
     }
 
-    async loadContactsFromZoho(): Promise<Contact[]> {
-        if (!this.settings.apiBaseUrl || !this.settings.accessToken) return [];
+    async loadContactsFromCardDAV(): Promise<Contact[]> {
+        if (!this.settings.carddavUrl) return [];
         try {
-            const res = await requestUrl({
-                url: `${this.settings.apiBaseUrl}/contacts`,
+            const auth = 'Basic ' + Buffer.from(`${this.settings.username}:${this.settings.password}`).toString('base64');
+            const list = await requestUrl({
+                url: this.settings.carddavUrl,
+                method: 'PROPFIND',
                 headers: {
-                    'Authorization': `Zoho-oauthtoken ${this.settings.accessToken}`
-                }
+                    'Authorization': auth,
+                    'Depth': '1'
+                },
+                body: '<?xml version="1.0"?><propfind xmlns="DAV:"><prop><href/></prop></propfind>'
             });
-            if (res.status < 200 || res.status >= 300) return [];
-            const data = JSON.parse(res.text);
+            if (list.status < 200 || list.status >= 300) return [];
+            const xml = list.text;
+            const hrefs = Array.from(xml.matchAll(/<href>([^<]+\.vcf)<\/href>/g)).map(m => m[1]);
             const contacts: Contact[] = [];
-            for (const item of data.contacts || []) {
-                contacts.push({
-                    uid: item.id || item.contact_id || randomUUID(),
-                    fullName: item.full_name || `${item.first_name ?? ''} ${item.last_name ?? ''}`.trim(),
-                    phone: item.phone,
-                    email: item.email,
-                    birthday: item.date_of_birth,
-                    company: item.company
-                });
+            for (const href of hrefs) {
+                const url = new URL(href, this.settings.carddavUrl).toString();
+                const res = await requestUrl({ url, headers: { 'Authorization': auth } });
+                if (res.status < 200 || res.status >= 300) continue;
+                const card = res.text;
+                const c = parseVCard(card);
+                if (c.uid) contacts.push(c);
             }
             return contacts;
         } catch (e) {
@@ -224,21 +241,30 @@ class ContactLinkSettingTab extends PluginSettingTab {
         containerEl.empty();
 
         new Setting(containerEl)
-            .setName('Zoho API base URL')
+            .setName('CardDAV URL')
             .addText(text => text
-                .setPlaceholder('https://contacts.zoho.com/api')
-                .setValue(this.plugin.settings.apiBaseUrl)
+                .setPlaceholder('https://example.com/carddav')
+                .setValue(this.plugin.settings.carddavUrl)
                 .onChange(async (value) => {
-                    this.plugin.settings.apiBaseUrl = value;
+                    this.plugin.settings.carddavUrl = value;
                     await this.plugin.saveSettings();
                 }));
 
         new Setting(containerEl)
-            .setName('Access token')
+            .setName('Username')
             .addText(text => text
-                .setValue(this.plugin.settings.accessToken)
+                .setValue(this.plugin.settings.username)
                 .onChange(async (value) => {
-                    this.plugin.settings.accessToken = value;
+                    this.plugin.settings.username = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Password')
+            .addText(text => text
+                .setValue(this.plugin.settings.password)
+                .onChange(async (value) => {
+                    this.plugin.settings.password = value;
                     await this.plugin.saveSettings();
                 }));
 

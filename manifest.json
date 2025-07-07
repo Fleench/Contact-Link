@@ -3,7 +3,7 @@
 	"name": "Contact Link",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-        "description": "Sync contacts from Zoho into your vault.",
+	"description": "Sync contacts from CardDAV into your vault.",
 	"author": "Obsidian",
 	"authorUrl": "https://obsidian.md",
 	"fundingUrl": "https://obsidian.md/pricing",
