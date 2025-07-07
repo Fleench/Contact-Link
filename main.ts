@@ -416,18 +416,31 @@ export default class ContactLinkPlugin extends Plugin {
             const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
             if (fm?.uid) contacts.push(f);
         }
+
+        contacts.sort((a, b) => {
+            const fma: any = this.app.metadataCache.getFileCache(a)?.frontmatter || {};
+            const fmb: any = this.app.metadataCache.getFileCache(b)?.frontmatter || {};
+            const nameA = fma[this.settings.fieldMap.fullName] ?? a.basename;
+            const nameB = fmb[this.settings.fieldMap.fullName] ?? b.basename;
+            return nameA.localeCompare(nameB);
+        });
+
+        const backlinkData = this.app.metadataCache.resolvedLinks;
         const lines: string[] = ['| Name | Phone | Email | Mentions |', '|---|---|---|---|'];
         for (const f of contacts) {
             const cache = this.app.metadataCache.getFileCache(f);
             const fm: any = cache?.frontmatter || {};
             const link = this.app.fileManager.generateMarkdownLink(f, f.path, undefined);
-            const phoneLink = fm.phone ? `[call](tel:${fm.phone})` : '';
-            const mailLink = fm.email ? `[email](mailto:${fm.email})` : '';
+            const phoneVal = fm[this.settings.fieldMap.phone];
+            const emailVal = fm[this.settings.fieldMap.email];
+            const phoneLink = phoneVal ? `[call](tel:${phoneVal})` : '';
+            const mailLink = emailVal ? `[email](mailto:${emailVal})` : '';
             let mentions = 0;
-            for (const file of this.app.vault.getMarkdownFiles()) {
-                if (file.path === f.path) continue;
-                const content = await this.app.vault.cachedRead(file);
-                if (content.includes(link) || content.includes(f.basename)) mentions++;
+            for (const [src, links] of Object.entries(backlinkData)) {
+                if (src === f.path) continue;
+                if ((links as Record<string, number>)[f.path]) {
+                    mentions += (links as Record<string, number>)[f.path];
+                }
             }
             lines.push(`| ${link} | ${phoneLink} | ${mailLink} | ${mentions} |`);
         }
