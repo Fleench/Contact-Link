@@ -139,6 +139,28 @@ export default class ContactLinkPlugin extends Plugin {
             editorCallback: (editor) => this.chooseAndInsertLink(editor)
         });
 
+        this.addCommand({
+            id: 'link-note-to-contact',
+            name: 'Link current note to contact',
+            checkCallback: (checking) => {
+                const file = this.app.workspace.getActiveFile();
+                if (!file || file.extension !== 'md') return false;
+                if (!checking) this.linkActiveNoteToContact();
+                return true;
+            }
+        });
+
+        this.addCommand({
+            id: 'create-contact-from-page',
+            name: 'Create contact from page',
+            checkCallback: (checking) => {
+                const file = this.app.workspace.getActiveFile();
+                if (!file || file.extension !== 'md') return false;
+                if (!checking) this.createContactFromPage();
+                return true;
+            }
+        });
+
         this.addSettingTab(new ContactLinkSettingTab(this.app, this));
     }
 
@@ -181,10 +203,10 @@ export default class ContactLinkPlugin extends Plugin {
             synced++;
             update();
         }
+        notice.hide();
 
         await this.pushContactsToCardDAV();
         await this.updateBirthdayCalendar();
-        notice.hide();
         new Notice(`Synced ${contacts.length} contacts`);
     }
 
@@ -214,13 +236,12 @@ export default class ContactLinkPlugin extends Plugin {
 
     async pushContactsToCardDAV() {
         if (!this.settings.carddavUrl) return;
-        const folder = normalizePath(this.settings.contactFolder);
         const base = this.settings.carddavUrl.replace(/\/$/, "");
         const auth = 'Basic ' + encodeBase64(`${this.settings.username}:${this.settings.password}`);
         for (const file of this.app.vault.getMarkdownFiles()) {
-            if (!file.path.startsWith(folder)) continue;
             const cache = this.app.metadataCache.getFileCache(file);
             const fm: any = cache?.frontmatter || {};
+            if (!fm.uid) continue;
             const contact: Contact = { uid: fm.uid || generateUUID() } as Contact;
             for (const key of Object.keys(this.settings.fieldMap) as (keyof FieldMap)[]) {
                 const prop = this.settings.fieldMap[key];
@@ -238,6 +259,7 @@ export default class ContactLinkPlugin extends Plugin {
                 },
                 body: vcard
             }).catch(e => console.error(e));
+            new Notice(`Updated contact ${contact.fullName}`);
         }
     }
 
@@ -325,8 +347,11 @@ export default class ContactLinkPlugin extends Plugin {
         if (!contact.uid) contact.uid = generateUUID();
         let baseName = contact.fullName ? sanitizeName(contact.fullName) : '';
         if (!baseName) baseName = contact.uid;
-        const filePath = `${folderPath}/${baseName}.md`;
-        const existing = this.app.vault.getAbstractFileByPath(filePath);
+        const existing = this.app.vault.getMarkdownFiles().find(f => {
+            const cache = this.app.metadataCache.getFileCache(f);
+            return cache?.frontmatter?.uid === contact.uid;
+        }) || this.app.vault.getAbstractFileByPath(`${folderPath}/${baseName}.md`);
+        const filePath = existing instanceof TFile ? existing.path : `${folderPath}/${baseName}.md`;
         const frontmatter: any = { uid: contact.uid };
         for (const key of Object.keys(this.settings.fieldMap) as (keyof FieldMap)[]) {
             const prop = this.settings.fieldMap[key];
@@ -336,7 +361,7 @@ export default class ContactLinkPlugin extends Plugin {
 
         if (!existing) {
             await this.app.vault.create(filePath, content);
-            console.log(`Synced contact ${contact.fullName || contact.uid}`);
+            new Notice(`Created contact ${contact.fullName || contact.uid}`);
         } else if (existing instanceof TFile) {
             const current = await this.app.vault.read(existing);
             let body = current.replace(/^---[\s\S]*?---\n/, '');
@@ -354,7 +379,7 @@ export default class ContactLinkPlugin extends Plugin {
                 body += `\n<!-- ContactLink conflict\n${diffs.join('\n')}\n-->\n`;
             }
             await this.app.vault.modify(existing, content + body);
-            console.log(`Synced contact ${contact.fullName || contact.uid}`);
+            new Notice(`Updated contact ${contact.fullName || contact.uid}`);
         }
     }
 
@@ -362,9 +387,8 @@ export default class ContactLinkPlugin extends Plugin {
         const files = this.app.vault.getMarkdownFiles();
         const contacts: TFile[] = [];
         for (const f of files) {
-            if (f.path.startsWith(normalizePath(this.settings.contactFolder))) {
-                contacts.push(f);
-            }
+            const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
+            if (fm?.uid) contacts.push(f);
         }
         const lines: string[] = ['| Name | Phone | Email | Mentions |', '|---|---|---|---|'];
         for (const f of contacts) {
@@ -392,9 +416,9 @@ export default class ContactLinkPlugin extends Plugin {
     async updateBirthdayCalendar() {
         const events: string[] = ['BEGIN:VCALENDAR', 'VERSION:2.0'];
         for (const file of this.app.vault.getMarkdownFiles()) {
-            if (!file.path.startsWith(normalizePath(this.settings.contactFolder))) continue;
             const cache = this.app.metadataCache.getFileCache(file);
             const fm: any = cache?.frontmatter || {};
+            if (!fm.uid) continue;
             const birthday = fm[this.settings.fieldMap.birthday];
             if (birthday) {
                 const uid = fm.uid || generateUUID();
@@ -440,7 +464,10 @@ export default class ContactLinkPlugin extends Plugin {
     }
 
     async chooseAndInsertLink(editor: import("obsidian").Editor) {
-        const files = this.app.vault.getMarkdownFiles().filter(f => f.path.startsWith(normalizePath(this.settings.contactFolder)));
+        const files = this.app.vault.getMarkdownFiles().filter(f => {
+            const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
+            return fm?.uid;
+        });
         const items = files.map(f => ({ file: f, name: f.basename }));
         const modal = new class extends SuggestModal<{file: TFile, name: string}> {
             plugin: ContactLinkPlugin;
@@ -462,6 +489,69 @@ export default class ContactLinkPlugin extends Plugin {
             }
         }(this.app, this, items);
         modal.open();
+    }
+
+    async applyContactToFile(file: TFile, contact: Contact) {
+        const frontmatter: any = { uid: contact.uid };
+        for (const key of Object.keys(this.settings.fieldMap) as (keyof FieldMap)[]) {
+            const prop = this.settings.fieldMap[key];
+            frontmatter[prop] = (contact as any)[key];
+        }
+        const current = await this.app.vault.read(file);
+        const body = current.replace(/^---[\s\S]*?---\n/, '');
+        await this.app.vault.modify(file, `---\n${stringifyYaml(frontmatter)}---\n${body}`);
+    }
+
+    async linkActiveNoteToContact() {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || file.extension !== 'md') return;
+        const contacts = await this.loadContactsFromCardDAV();
+        const items = contacts.map(c => ({ contact: c, name: c.fullName || c.uid }));
+        const modal = new class extends SuggestModal<{contact: Contact, name: string}> {
+            plugin: ContactLinkPlugin;
+            items: {contact: Contact, name: string}[];
+            constructor(app: App, plugin: ContactLinkPlugin, items: {contact: Contact, name: string}[]) {
+                super(app);
+                this.plugin = plugin;
+                this.items = items;
+            }
+            getSuggestions(q: string) {
+                return this.items.filter(i => i.name.toLowerCase().includes(q.toLowerCase()));
+            }
+            renderSuggestion(value: {contact: Contact, name: string}, el: HTMLElement) {
+                el.createEl('div', { text: value.name });
+            }
+            async onChooseSuggestion(value: {contact: Contact, name: string}) {
+                await this.plugin.applyContactToFile(file, value.contact);
+                new Notice(`Linked note to ${value.name}`);
+            }
+        }(this.app, this, items);
+        modal.open();
+    }
+
+    async createContactFromPage() {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || file.extension !== 'md') return;
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fm: any = cache?.frontmatter || {};
+        const contact: Contact = { uid: fm.uid || generateUUID() } as Contact;
+        for (const key of Object.keys(this.settings.fieldMap) as (keyof FieldMap)[]) {
+            const prop = this.settings.fieldMap[key];
+            (contact as any)[key] = fm[prop];
+        }
+        if (!contact.fullName) contact.fullName = file.basename;
+        if (!this.settings.carddavUrl) return;
+        const base = this.settings.carddavUrl.replace(/\/$/, "");
+        const auth = 'Basic ' + encodeBase64(`${this.settings.username}:${this.settings.password}`);
+        const vcard = buildVCard(contact);
+        await requestUrl({
+            url: `${base}/${contact.uid}.vcf`,
+            method: 'PUT',
+            headers: { 'Authorization': auth, 'Content-Type': 'text/vcard' },
+            body: vcard
+        }).catch(e => console.error(e));
+        await this.applyContactToFile(file, contact);
+        new Notice(`Created contact ${contact.fullName}`);
     }
 
     async loadSettings() {
