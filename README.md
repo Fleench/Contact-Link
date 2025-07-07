@@ -9,6 +9,7 @@ Contact Link synchronizes your Obsidian vault with a CardDAV server so your note
 - Relationship field to track how contacts are related.
 - Import contacts from a CSV file (`contacts.csv`).
 - Dashboard table with phone and email actions and mention counts.
+- Styled dashboard table for better readability.
 - Birthday calendar exported as an ICS file.
 - Commands to insert contact links in any note, link the current note to a contact, and create a contact from the active page.
 - Works on both desktop and mobile without extra dependencies.

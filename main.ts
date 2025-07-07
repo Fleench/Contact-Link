@@ -425,28 +425,33 @@ export default class ContactLinkPlugin extends Plugin {
             return nameA.localeCompare(nameB);
         });
 
-        const backlinkData = this.app.metadataCache.resolvedLinks;
-        const lines: string[] = ['| Name | Phone | Email | Mentions |', '|---|---|---|---|'];
-        for (const f of contacts) {
-            const cache = this.app.metadataCache.getFileCache(f);
-            const fm: any = cache?.frontmatter || {};
-            const link = this.app.fileManager.generateMarkdownLink(f, f.path, undefined);
-            const phoneVal = fm[this.settings.fieldMap.phone];
-            const emailVal = fm[this.settings.fieldMap.email];
-            const phoneLink = phoneVal ? `[call](tel:${phoneVal})` : '';
-            const mailLink = emailVal ? `[email](mailto:${emailVal})` : '';
-            let mentions = 0;
-            for (const [src, links] of Object.entries(backlinkData)) {
-                if (src === f.path) continue;
-                if ((links as Record<string, number>)[f.path]) {
-                    mentions += (links as Record<string, number>)[f.path];
-                }
-            }
-            lines.push(`| ${link} | ${phoneLink} | ${mailLink} | ${mentions} |`);
-        }
-        const file = await this.app.vault.create("Contacts Dashboard.md", lines.join('\n')).catch(async existing => {
-            if (existing instanceof TFile) await this.app.vault.modify(existing, lines.join('\n'));
-        });
+       const backlinkData = this.app.metadataCache.resolvedLinks;
+       const lines: string[] = [
+           '<table class="cl-dashboard">',
+           '<thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Mentions</th></tr></thead>',
+           '<tbody>'
+       ];
+       for (const f of contacts) {
+           const cache = this.app.metadataCache.getFileCache(f);
+           const fm: any = cache?.frontmatter || {};
+           const link = this.app.fileManager.generateMarkdownLink(f, f.path, undefined);
+           const phoneVal = fm[this.settings.fieldMap.phone];
+           const emailVal = fm[this.settings.fieldMap.email];
+           const phoneLink = phoneVal ? `[call](tel:${phoneVal})` : '';
+           const mailLink = emailVal ? `[email](mailto:${emailVal})` : '';
+           let mentions = 0;
+           for (const [src, links] of Object.entries(backlinkData)) {
+               if (src === f.path) continue;
+               if ((links as Record<string, number>)[f.path]) {
+                   mentions += (links as Record<string, number>)[f.path];
+               }
+           }
+           lines.push(`<tr><td>${link}</td><td>${phoneLink}</td><td>${mailLink}</td><td>${mentions}</td></tr>`);
+       }
+       lines.push('</tbody></table>');
+       const file = await this.app.vault.create("Contacts Dashboard.md", lines.join('\n')).catch(async existing => {
+           if (existing instanceof TFile) await this.app.vault.modify(existing, lines.join('\n'));
+       });
         if (file instanceof TFile) {
             await this.app.workspace.getLeaf(false).openFile(file);
         }
