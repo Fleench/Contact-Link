@@ -17,3 +17,20 @@ This repository contains only a minimal example implementation. Two-way updates 
 ### Zoho API Setup
 
 Enter your API base URL (e.g. `https://contacts.zoho.com/api`) and an OAuth access token in the plugin settings.
+
+### Obtaining a Zoho OAuth token
+
+1. Log in to the [Zoho API Console](https://api-console.zoho.com/) and create a new OAuth client. Any client type works, but the **Self Client** option is the quickest for testing.
+2. Choose the scopes you need (for example `ZohoContacts.fullaccess`) and generate a grant token.
+3. Exchange the grant token for an access token using Zoho's token endpoint:
+
+   ```bash
+   curl --request POST \
+        'https://accounts.zoho.com/oauth/v2/token?grant_type=authorization_code&client_id=YOUR_CLIENT_ID&client_secret=YOUR_CLIENT_SECRET&redirect_uri=YOUR_REGISTERED_URI&code=GRANT_TOKEN'
+   ```
+
+   The JSON response includes an `access_token` and optionally a `refresh_token` if you requested offline access.
+4. Paste the `access_token` value into the plugin's **Access token** field. If you obtained a `refresh_token`, you can periodically generate a new access token without repeating the authorization step.
+5. Use **Check authentication** in the plugin settings to verify that the token works.
+
+Tokens typically expire after an hour unless refreshed. If authentication fails, generate a new token and update the setting.
