@@ -26,3 +26,19 @@ If your plugin does not need CSS, delete this file.
 .cl-progress-text {
     font-weight: bold;
 }
+
+.cl-dashboard {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+}
+
+.cl-dashboard th,
+.cl-dashboard td {
+    border: 1px solid var(--background-modifier-border);
+    padding: 4px 8px;
+}
+
+.cl-dashboard tr:nth-child(even) {
+    background-color: var(--background-secondary);
+}
