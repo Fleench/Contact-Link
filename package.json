@@ -1,7 +1,7 @@
 {
 	"name": "contact-link",
 	"version": "1.0.0",
-	"description": "Sync contacts from CardDAV into your vault",
+        "description": "Sync contacts from Zoho into your vault",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
