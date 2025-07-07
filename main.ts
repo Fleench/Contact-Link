@@ -188,15 +188,17 @@ export default class ContactLinkPlugin extends Plugin {
                 body: '<?xml version="1.0"?><propfind xmlns="DAV:"><prop><href/></prop></propfind>'
             });
             if (list.status < 200 || list.status >= 300) return [];
-            const xml = list.text;
-            const hrefs = Array.from(xml.matchAll(/<href>([^<]+\.vcf)<\/href>/g)).map(m => m[1]);
+            const xmlDoc = new DOMParser().parseFromString(list.text, 'application/xml');
+            const hrefEls = Array.from(xmlDoc.getElementsByTagName('href'));
+            const hrefs = hrefEls
+                .map(h => h.textContent || '')
+                .filter(h => h.endsWith('.vcf'));
             const contacts: Contact[] = [];
             for (const href of hrefs) {
                 const url = new URL(href, this.settings.carddavUrl).toString();
                 const res = await requestUrl({ url, headers: { 'Authorization': auth } });
                 if (res.status < 200 || res.status >= 300) continue;
-                const card = res.text;
-                const c = parseVCard(card);
+                const c = parseVCard(res.text);
                 if (c.uid) contacts.push(c);
             }
             return contacts;
@@ -210,26 +212,35 @@ export default class ContactLinkPlugin extends Plugin {
     async listAddressBooks(): Promise<AddressBook[]> {
         if (!this.settings.carddavUrl) return [];
         const auth = 'Basic ' + Buffer.from(`${this.settings.username}:${this.settings.password}`).toString('base64');
+        const propfind = async (url: string, depth: string, body: string) => {
+            const res = await requestUrl({ url, method: 'PROPFIND', headers: { 'Authorization': auth, 'Depth': depth }, body });
+            if (res.status < 200 || res.status >= 300) throw new Error(`PROPFIND ${url}`);
+            return new DOMParser().parseFromString(res.text, 'application/xml');
+        };
         try {
-            const res = await requestUrl({
-                url: this.settings.carddavUrl,
-                method: 'PROPFIND',
-                headers: {
-                    'Authorization': auth,
-                    'Depth': '1'
-                },
-                body: '<?xml version="1.0"?><propfind xmlns="DAV:"><prop><displayname/><resourcetype/></prop></propfind>'
-            });
-            if (res.status < 200 || res.status >= 300) return [];
-            const xml = res.text;
-            const parts = xml.split('<response>').slice(1);
+            const base = this.settings.carddavUrl.replace(/\/$/, '');
+            // current-user-principal discovery
+            let doc = await propfind(base, '0', '<?xml version="1.0"?><propfind xmlns="DAV:"><prop><current-user-principal/></prop></propfind>');
+            const principalHref = doc.getElementsByTagName('href')[0]?.textContent;
+            if (!principalHref) return [];
+            const principalUrl = new URL(principalHref, base).toString();
+
+            // addressbook-home-set discovery
+            doc = await propfind(principalUrl, '0', '<?xml version="1.0"?><propfind xmlns="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav"><prop><addressbook-home-set xmlns="urn:ietf:params:xml:ns:carddav"/></prop></propfind>');
+            const homeHref = doc.getElementsByTagName('href')[0]?.textContent;
+            if (!homeHref) return [];
+            const homeUrl = new URL(homeHref, principalUrl).toString();
+
+            // list available address books
+            doc = await propfind(homeUrl, '1', '<?xml version="1.0"?><propfind xmlns="DAV:" xmlns:card="urn:ietf:params:xml:ns:carddav"><prop><displayname/><resourcetype/></prop></propfind>');
+            const responses = Array.from(doc.getElementsByTagName('response'));
             const books: AddressBook[] = [];
-            for (const p of parts) {
-                if (!p.includes('<addressbook')) continue;
-                const href = p.match(/<href>([^<]+)<\/href>/)?.[1];
+            for (const r of responses) {
+                if (!r.getElementsByTagName('addressbook').length) continue;
+                const href = r.getElementsByTagName('href')[0]?.textContent;
                 if (!href) continue;
-                const name = p.match(/<displayname>([^<]*)<\/displayname>/)?.[1] || href;
-                const url = new URL(href, this.settings.carddavUrl).toString();
+                const name = r.getElementsByTagName('displayname')[0]?.textContent || href;
+                const url = new URL(href, homeUrl).toString();
                 books.push({ name, url });
             }
             return books;

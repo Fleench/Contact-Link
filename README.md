@@ -13,6 +13,15 @@ Contact Link synchronizes your Obsidian vault with a CardDAV server so your note
 
 This project still provides only a lightweight example implementation but now demonstrates how a more complete contact manager could be built.
 
+### Automatic server discovery
+
+Instead of relying on a single CardDAV URL, the plugin now follows the same
+multi-step lookup that DAVx5 uses. It first asks the server for your
+`current-user-principal`, then queries that principal for the
+`addressbook-home-set` and finally lists all address books found there. You can
+choose the correct collection from a dropdown in the settings tab so the sync
+always targets the right address book.
+
 ### Zoho CardDAV Setup
 
 Set the CardDAV URL to:
