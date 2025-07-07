@@ -74,6 +74,10 @@ function buildVCard(contact: Contact): string {
     return lines.join('\r\n');
 }
 
+function sanitizeName(name: string): string {
+    return name.replace(/[\\/:*?"<>|]/g, '_').trim();
+}
+
 export default class ContactLinkPlugin extends Plugin {
     settings: ContactLinkSettings;
 
@@ -139,7 +143,14 @@ export default class ContactLinkPlugin extends Plugin {
         update();
 
         for (const c of contacts) {
-            await this.upsertContactNote(c);
+            try {
+                await Promise.race([
+                    this.upsertContactNote(c),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 30000))
+                ]);
+            } catch (e) {
+                console.error(`Skipping contact ${c.fullName || c.uid}:`, e);
+            }
             synced++;
             update();
         }
@@ -285,7 +296,9 @@ export default class ContactLinkPlugin extends Plugin {
         const folderPath = normalizePath(this.settings.contactFolder);
         await this.app.vault.createFolder(folderPath).catch(()=>{});
         if (!contact.uid) contact.uid = randomUUID();
-        const filePath = `${folderPath}/${contact.fullName || contact.uid}.md`;
+        let baseName = contact.fullName ? sanitizeName(contact.fullName) : '';
+        if (!baseName) baseName = contact.uid;
+        const filePath = `${folderPath}/${baseName}.md`;
         const existing = this.app.vault.getAbstractFileByPath(filePath);
         const frontmatter: any = { uid: contact.uid };
         for (const key of Object.keys(this.settings.fieldMap) as (keyof FieldMap)[]) {
