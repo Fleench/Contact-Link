@@ -4,6 +4,7 @@ from pathlib import Path
 from urllib.parse import urljoin
 
 from flask import Flask, request, Response, send_file, abort
+from functools import wraps
 from dotenv import load_dotenv
 import requests
 
@@ -12,10 +13,39 @@ load_dotenv()
 CARDDAV_URL = os.getenv("CARDDAV_URL")
 USERNAME = os.getenv("USERNAME")
 PASSWORD = os.getenv("PASSWORD")
+LOCAL_USERNAME = os.getenv("LOCAL_USERNAME")
+LOCAL_PASSWORD = os.getenv("LOCAL_PASSWORD")
 CACHE_DIR = Path(os.getenv("CACHE_DIR", "cache"))
 PORT = int(os.getenv("PORT", "8000"))
 
 app = Flask(__name__)
+
+
+def check_auth(username: str, password: str) -> bool:
+    """Validate provided credentials."""
+    if not LOCAL_USERNAME and not LOCAL_PASSWORD:
+        return True
+    return username == LOCAL_USERNAME and password == LOCAL_PASSWORD
+
+
+def authenticate() -> Response:
+    """Sends a 401 response that enables basic auth"""
+    resp = Response("Authentication required", 401)
+    resp.headers["WWW-Authenticate"] = 'Basic realm="Login Required"'
+    return resp
+
+
+def requires_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not LOCAL_USERNAME and not LOCAL_PASSWORD:
+            return f(*args, **kwargs)
+        auth = request.authorization
+        if not auth or not check_auth(auth.username, auth.password):
+            return authenticate()
+        return f(*args, **kwargs)
+
+    return decorated
 
 session = requests.Session()
 if USERNAME and PASSWORD:
@@ -53,6 +83,7 @@ def build_listing() -> str:
 
 
 @app.route("/", methods=["OPTIONS"])
+@requires_auth
 def options_root():
     resp = Response()
     resp.headers["Allow"] = "OPTIONS,PROPFIND,GET,PUT"
@@ -60,12 +91,14 @@ def options_root():
 
 
 @app.route("/", methods=["PROPFIND"])
+@requires_auth
 def propfind_root():
     xml = build_listing()
     return Response(xml, status=207, mimetype="application/xml")
 
 
 @app.route("/<uid>.vcf", methods=["GET"])
+@requires_auth
 def get_contact(uid: str):
     file = CACHE_DIR / f"{uid}.vcf"
     if not file.exists():
@@ -74,6 +107,7 @@ def get_contact(uid: str):
 
 
 @app.route("/<uid>.vcf", methods=["PUT"])
+@requires_auth
 def put_contact(uid: str):
     file = CACHE_DIR / f"{uid}.vcf"
     data = request.get_data(as_text=True)

@@ -27,7 +27,8 @@ Use your Zoho credentials for authentication.
 
 A small Python server is provided in `local_carddav_server.py` to cache your Zoho
 contacts and expose them locally. Configure it with a `.env` file based on
-`.env.example`:
+`.env.example`.  You can also set `LOCAL_USERNAME` and `LOCAL_PASSWORD` to
+require Basic Auth when accessing the proxy:
 
 ```bash
 pip install -r requirements.txt
