@@ -42,3 +42,51 @@ If your plugin does not need CSS, delete this file.
 .cl-dashboard tr:nth-child(even) {
     background-color: var(--background-secondary);
 }
+
+.cl-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.cl-card {
+    border: 1px solid var(--background-modifier-border);
+    padding: 8px;
+    border-radius: 4px;
+    background-color: var(--background-primary);
+}
+
+.cl-card-actions {
+    margin-top: 4px;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.cl-metrics {
+    margin-bottom: 8px;
+    font-weight: bold;
+    display: flex;
+    gap: 12px;
+}
+
+@media (max-width: 600px) {
+    .cl-card-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.cl-cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+    margin-top: 8px;
+}
+
+.cl-cal-day {
+    border: 1px solid var(--background-modifier-border);
+    min-height: 40px;
+    padding: 2px;
+    font-size: 0.8em;
+}
