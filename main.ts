@@ -194,7 +194,7 @@ export default class ContactLinkPlugin extends Plugin {
         for (const c of contacts) {
             try {
                 await Promise.race([
-                    this.upsertContactNote(c),
+                    this.upsertContactNote(c, false),
                     new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 30000))
                 ]);
             } catch (e) {
@@ -341,7 +341,7 @@ export default class ContactLinkPlugin extends Plugin {
     }
 
 
-    async upsertContactNote(contact: Contact) {
+    async upsertContactNote(contact: Contact, showNotice = true) {
         const folderPath = normalizePath(this.settings.contactFolder);
         await this.app.vault.createFolder(folderPath).catch(()=>{});
         if (!contact.uid) contact.uid = generateUUID();
@@ -361,7 +361,7 @@ export default class ContactLinkPlugin extends Plugin {
 
         if (!existing) {
             await this.app.vault.create(filePath, content);
-            new Notice(`Created contact ${contact.fullName || contact.uid}`);
+            if (showNotice) new Notice(`Created contact ${contact.fullName || contact.uid}`);
         } else if (existing instanceof TFile) {
             const current = await this.app.vault.read(existing);
             let body = current.replace(/^---[\s\S]*?---\n/, '');
@@ -379,7 +379,7 @@ export default class ContactLinkPlugin extends Plugin {
                 body += `\n<!-- ContactLink conflict\n${diffs.join('\n')}\n-->\n`;
             }
             await this.app.vault.modify(existing, content + body);
-            new Notice(`Updated contact ${contact.fullName || contact.uid}`);
+            if (showNotice) new Notice(`Updated contact ${contact.fullName || contact.uid}`);
         }
     }
 
