@@ -113,11 +113,40 @@ export default class ContactLinkPlugin extends Plugin {
 
     async syncContacts() {
         const contacts = await this.loadContactsFromCardDAV();
+        const total = contacts.length;
+        let synced = 0;
+
+        const frag = document.createDocumentFragment();
+        const container = frag.createDiv({ cls: 'cl-sync-notice' });
+        container.innerHTML = `
+            <svg class="cl-progress-ring" viewBox="0 0 36 36">
+                <circle cx="18" cy="18" r="16" fill="none" stroke="var(--background-modifier-border)" stroke-width="4" />
+                <circle class="cl-progress-circle" cx="18" cy="18" r="16" fill="none" stroke="var(--interactive-accent)" stroke-width="4" />
+            </svg>
+        `;
+        const progressCircle = container.querySelector('.cl-progress-circle') as SVGCircleElement;
+        const textEl = container.createDiv({ cls: 'cl-progress-text', text: `${synced}/${total}` });
+        const notice = new Notice(frag, 0);
+        const radius = 16;
+        const circumference = 2 * Math.PI * radius;
+        progressCircle.style.strokeDasharray = `${circumference}`;
+        progressCircle.style.strokeDashoffset = `${circumference}`;
+        const update = () => {
+            const pct = total ? synced / total : 1;
+            progressCircle.style.strokeDashoffset = `${circumference - pct * circumference}`;
+            textEl.setText(`${synced}/${total}`);
+        };
+        update();
+
         for (const c of contacts) {
             await this.upsertContactNote(c);
+            synced++;
+            update();
         }
+
         await this.pushContactsToCardDAV();
         await this.updateBirthdayCalendar();
+        notice.hide();
         new Notice(`Synced ${contacts.length} contacts`);
     }
 

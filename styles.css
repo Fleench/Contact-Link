@@ -6,3 +6,23 @@ available in the app when your plugin is enabled.
 If your plugin does not need CSS, delete this file.
 
 */
+
+.cl-sync-notice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.cl-progress-ring {
+    width: 36px;
+    height: 36px;
+    transform: rotate(-90deg);
+}
+
+.cl-progress-circle {
+    transition: stroke-dashoffset 0.2s ease;
+}
+
+.cl-progress-text {
+    font-weight: bold;
+}
