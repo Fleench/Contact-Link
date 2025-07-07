@@ -203,10 +203,11 @@ export default class ContactLinkPlugin extends Plugin {
             synced++;
             update();
         }
-        notice.hide();
+        await this.unlinkDeletedContacts(new Set(contacts.map(c => c.uid)));
 
-        await this.pushContactsToCardDAV();
+        await this.pushContactsToCardDAV(new Map(contacts.map(c => [c.uid, c])));
         await this.updateBirthdayCalendar();
+        notice.hide();
         new Notice(`Synced ${contacts.length} contacts`);
     }
 
@@ -234,7 +235,7 @@ export default class ContactLinkPlugin extends Plugin {
         }
     }
 
-    async pushContactsToCardDAV() {
+    async pushContactsToCardDAV(serverMap?: Map<string, Contact>) {
         if (!this.settings.carddavUrl) return;
         const base = this.settings.carddavUrl.replace(/\/$/, "");
         const auth = 'Basic ' + encodeBase64(`${this.settings.username}:${this.settings.password}`);
@@ -248,9 +249,11 @@ export default class ContactLinkPlugin extends Plugin {
                 (contact as any)[key] = fm[prop];
             }
             if (!contact.fullName) contact.fullName = file.basename;
+            const orig = serverMap?.get(contact.uid);
+            if (orig && JSON.stringify(orig) === JSON.stringify(contact)) continue;
             const vcard = buildVCard(contact);
             const url = `${base}/${contact.uid}.vcf`;
-            await requestUrl({
+            const res = await requestUrl({
                 url,
                 method: 'PUT',
                 headers: {
@@ -258,8 +261,26 @@ export default class ContactLinkPlugin extends Plugin {
                     'Content-Type': 'text/vcard'
                 },
                 body: vcard
-            }).catch(e => console.error(e));
-            new Notice(`Updated contact ${contact.fullName}`);
+            }).catch(e => {
+                console.error(e);
+                return undefined;
+            });
+            if (res && res.status >= 200 && res.status < 300) {
+                new Notice(`Updated contact ${contact.fullName}`);
+            }
+        }
+    }
+
+    async unlinkDeletedContacts(serverUids: Set<string>) {
+        for (const file of this.app.vault.getMarkdownFiles()) {
+            const cache = this.app.metadataCache.getFileCache(file);
+            const fm: any = cache?.frontmatter;
+            if (fm?.uid && !serverUids.has(fm.uid)) {
+                const current = await this.app.vault.read(file);
+                const body = current.replace(/^---[\s\S]*?---\n/, '');
+                const { uid, ...rest } = fm;
+                await this.app.vault.modify(file, `---\n${stringifyYaml(rest)}---\n${body}`);
+            }
         }
     }
 
@@ -368,13 +389,18 @@ export default class ContactLinkPlugin extends Plugin {
             const cache = this.app.metadataCache.getFileCache(existing);
             const fm: any = cache?.frontmatter || {};
             const diffs: string[] = [];
+            let changed = false;
             for (const key of Object.keys(this.settings.fieldMap) as (keyof FieldMap)[]) {
                 const prop = this.settings.fieldMap[key];
                 const newVal = (contact as any)[key];
-                if (fm[prop] && fm[prop] !== newVal) {
-                    diffs.push(`${prop}: ${fm[prop]} -> ${newVal}`);
+                if (fm[prop] !== newVal) {
+                    changed = true;
+                    if (fm[prop] && newVal && fm[prop] !== newVal) {
+                        diffs.push(`${prop}: ${fm[prop]} -> ${newVal}`);
+                    }
                 }
             }
+            if (!changed) return;
             if (diffs.length) {
                 body += `\n<!-- ContactLink conflict\n${diffs.join('\n')}\n-->\n`;
             }
