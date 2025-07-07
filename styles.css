@@ -46,7 +46,7 @@ If your plugin does not need CSS, delete this file.
 .cl-card-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 8px;
+    gap: 16px;
     margin-top: 8px;
 }
 
@@ -54,7 +54,8 @@ If your plugin does not need CSS, delete this file.
     border: 1px solid var(--background-modifier-border);
     padding: 8px;
     border-radius: 4px;
-    background-color: var(--background-primary);
+    background-color: var(--background-primary-alt);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .cl-card-actions {
