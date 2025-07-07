@@ -51,3 +51,24 @@ python local_carddav_server.py
 The plugin can then point to `http://localhost:8000/` as its CardDAV URL. The
 server keeps a cache of vCard files in the directory specified by `CACHE_DIR`
 and forwards updates to your Zoho account.
+
+## Getting Started
+
+1. Install the Node dependencies:
+
+   ```bash
+   npm install
+   ```
+
+2. Build the plugin bundle:
+
+   ```bash
+   npm run build
+   ```
+
+3. Copy `manifest.json`, `main.js` and `styles.css` into your Obsidian
+   `.obsidian/plugins/contact-link` folder and enable the plugin from Obsidian's
+   community plugins tab.
+
+For development you can run `npm run dev` to automatically rebuild the plugin
+when the source files change.
