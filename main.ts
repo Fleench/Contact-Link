@@ -183,6 +183,18 @@ export default class ContactLinkPlugin extends Plugin {
             }
         });
 
+        this.addCommand({
+            id: 'pull-contacts-from-server',
+            name: 'Pull contacts from CardDAV',
+            callback: () => this.pullContacts()
+        });
+
+        this.addCommand({
+            id: 'push-contacts-to-server',
+            name: 'Push contacts to CardDAV',
+            callback: () => this.pushContacts()
+        });
+
         this.addSettingTab(new ContactLinkSettingTab(this.app, this));
     }
 
@@ -259,6 +271,58 @@ export default class ContactLinkPlugin extends Plugin {
             console.error(e);
             new Notice('Authentication failed');
         }
+    }
+
+    async pullContacts() {
+        const contacts = await this.loadContactsFromCardDAV();
+        const total = contacts.length;
+        let synced = 0;
+
+        const frag = document.createDocumentFragment();
+        const container = frag.createDiv({ cls: 'cl-sync-notice' });
+        container.innerHTML = `
+            <svg class="cl-progress-ring" viewBox="0 0 36 36">
+                <circle cx="18" cy="18" r="16" fill="none" stroke="var(--background-modifier-border)" stroke-width="4" />
+                <circle class="cl-progress-circle" cx="18" cy="18" r="16" fill="none" stroke="var(--interactive-accent)" stroke-width="4" />
+            </svg>
+        `;
+        const progressCircle = container.querySelector('.cl-progress-circle') as SVGCircleElement;
+        const textEl = container.createDiv({ cls: 'cl-progress-text', text: `${synced}/${total}` });
+        const notice = new Notice(frag, 0);
+        const radius = 16;
+        const circumference = 2 * Math.PI * radius;
+        progressCircle.style.strokeDasharray = `${circumference}`;
+        progressCircle.style.strokeDashoffset = `${circumference}`;
+        const update = () => {
+            const pct = total ? synced / total : 1;
+            progressCircle.style.strokeDashoffset = `${circumference - pct * circumference}`;
+            textEl.setText(`${synced}/${total}`);
+        };
+        update();
+
+        for (const c of contacts) {
+            try {
+                await Promise.race([
+                    this.upsertContactNote(c, false),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 30000))
+                ]);
+            } catch (e) {
+                console.error(`Skipping contact ${c.fullName || c.uid}:`, e);
+            }
+            synced++;
+            update();
+        }
+        await this.unlinkDeletedContacts(new Set(contacts.map(c => c.uid)));
+        await this.updateBirthdayCalendar();
+        notice.hide();
+        new Notice(`Pulled ${contacts.length} contacts`);
+    }
+
+    async pushContacts() {
+        const contacts = await this.loadContactsFromCardDAV();
+        await this.pushContactsToCardDAV(new Map(contacts.map(c => [c.uid, c])));
+        await this.updateBirthdayCalendar();
+        new Notice('Pushed contacts to server');
     }
 
     async pushContactsToCardDAV(serverMap?: Map<string, Contact>) {
