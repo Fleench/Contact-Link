@@ -3,7 +3,7 @@ rem Update script to fetch latest TypeScript, CSS and JSON plugin files
 rem Usage: set REPO_URL=<url> && update.bat
 
 if "%REPO_URL%"=="" (
-    set REPO_URL=https://raw.githubusercontent.com/Fleench/Contact-Link/main
+    set REPO_URL=https://raw.githubusercontent.com/Fleench/Contact-Link/refs/heads/master/
 )
 
 set FILES=main.ts styles.css manifest.json versions.json
