@@ -56,3 +56,6 @@ Use your Zoho credentials for authentication.
 
 For development you can run `npm run dev` to automatically rebuild the plugin
 when the source files change.
+
+To update these files from the upstream repository run `./update.sh` on Unix
+or `update.bat` on Windows. You can set `REPO_URL` to override the source repo.
