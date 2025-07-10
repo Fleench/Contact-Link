@@ -780,21 +780,32 @@ class DashboardModal extends Modal {
             if (filter !== 'all' && (c.relationship || '').toLowerCase() !== filter) continue;
             if (term && !((c.name||'').toLowerCase().includes(term) || (c.company||'').toLowerCase().includes(term))) continue;
             const card = this.grid.createDiv({ cls: 'cl-card' });
-            const nameLink = card.createEl('a', { text: c.name, href: '#' });
+            const header = card.createDiv({ cls: 'cl-card-header' });
+            const nameLink = header.createEl('a', { text: c.name, href: '#' });
             nameLink.addEventListener('click', e => { e.preventDefault(); this.plugin.app.workspace.getLeaf(true).openFile(c.file); });
-            if (c.company) card.createDiv({ text: c.company });
-            if (c.phone) card.createEl('div', { text: c.phone });
-            if (c.email) card.createEl('a', { text: c.email, href: `mailto:${c.email}` });
-            if (c.birthday) {
-                const icon = this.isUpcoming(c.birthday) ? ' \uD83C\uDF82' : '';
-                card.createDiv({ text: `Birthday: ${c.birthday}${icon}` });
-            }
-            card.createDiv({ text: `Mentions: ${c.mentions}` });
+            const list = card.createEl('ul', { cls: 'cl-card-info' });
+            const addItem = (icon: string, text: string, href?: string) => {
+                const li = list.createEl('li');
+                li.createSpan({ text: icon });
+                if (href) {
+                    const link = li.createEl('a', { text, href });
+                    link.addEventListener('click', e => { if(href==='#'){ e.preventDefault(); } });
+                } else {
+                    li.createSpan({ text });
+                }
+            };
+            if (c.company) addItem('🏢', c.company);
+            if (c.phone) addItem('📞', c.phone, `tel:${c.phone}`);
+            if (c.email) addItem('📧', c.email, `mailto:${c.email}`);
+            if (c.birthday) addItem('🎂', `${c.birthday}${this.isUpcoming(c.birthday) ? ' 🎉' : ''}`);
+            addItem('💬', `Mentions: ${c.mentions}`);
             if (c.recentNotes.length) {
-                const list = card.createEl('ul');
+                const li = list.createEl('li');
+                li.createSpan({ text: '📝' });
+                const notes = li.createEl('ul', { cls: 'cl-card-notes' });
                 c.recentNotes.slice(0,3).forEach(f => {
-                    const li = list.createEl('li');
-                    const link = li.createEl('a', { text: f.basename, href: '#' });
+                    const noteLi = notes.createEl('li');
+                    const link = noteLi.createEl('a', { text: f.basename, href: '#' });
                     link.addEventListener('click', e => { e.preventDefault(); this.plugin.app.workspace.getLeaf(true).openFile(f); });
                 });
             }
@@ -860,21 +871,32 @@ class DashboardView extends ItemView {
             if (filter !== 'all' && (c.relationship || '').toLowerCase() !== filter) continue;
             if (term && !((c.name||'').toLowerCase().includes(term) || (c.company||'').toLowerCase().includes(term))) continue;
             const card = this.grid.createDiv({ cls: 'cl-card' });
-            const nameLink = card.createEl('a', { text: c.name, href: '#' });
+            const header = card.createDiv({ cls: 'cl-card-header' });
+            const nameLink = header.createEl('a', { text: c.name, href: '#' });
             nameLink.addEventListener('click', e => { e.preventDefault(); this.plugin.app.workspace.getLeaf(true).openFile(c.file); });
-            if (c.company) card.createDiv({ text: c.company });
-            if (c.phone) card.createEl('div', { text: c.phone });
-            if (c.email) card.createEl('a', { text: c.email, href: `mailto:${c.email}` });
-            if (c.birthday) {
-                const icon = this.isUpcoming(c.birthday) ? ' \uD83C\uDF82' : '';
-                card.createDiv({ text: `Birthday: ${c.birthday}${icon}` });
-            }
-            card.createDiv({ text: `Mentions: ${c.mentions}` });
+            const list = card.createEl('ul', { cls: 'cl-card-info' });
+            const addItem = (icon: string, text: string, href?: string) => {
+                const li = list.createEl('li');
+                li.createSpan({ text: icon });
+                if (href) {
+                    const link = li.createEl('a', { text, href });
+                    link.addEventListener('click', e => { if(href==='#'){ e.preventDefault(); } });
+                } else {
+                    li.createSpan({ text });
+                }
+            };
+            if (c.company) addItem('🏢', c.company);
+            if (c.phone) addItem('📞', c.phone, `tel:${c.phone}`);
+            if (c.email) addItem('📧', c.email, `mailto:${c.email}`);
+            if (c.birthday) addItem('🎂', `${c.birthday}${this.isUpcoming(c.birthday) ? ' 🎉' : ''}`);
+            addItem('💬', `Mentions: ${c.mentions}`);
             if (c.recentNotes.length) {
-                const list = card.createEl('ul');
+                const li = list.createEl('li');
+                li.createSpan({ text: '📝' });
+                const notes = li.createEl('ul', { cls: 'cl-card-notes' });
                 c.recentNotes.slice(0,3).forEach(f => {
-                    const li = list.createEl('li');
-                    const link = li.createEl('a', { text: f.basename, href: '#' });
+                    const noteLi = notes.createEl('li');
+                    const link = noteLi.createEl('a', { text: f.basename, href: '#' });
                     link.addEventListener('click', e => { e.preventDefault(); this.plugin.app.workspace.getLeaf(true).openFile(f); });
                 });
             }
