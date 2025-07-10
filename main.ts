@@ -127,6 +127,8 @@ export default class ContactLinkPlugin extends Plugin {
 
         this.registerView(VIEW_TYPE_DASHBOARD, (leaf) => new DashboardView(leaf, this));
 
+        this.addRibbonIcon('layout-dashboard', 'Open contacts dashboard', () => this.openDashboard());
+
         this.addCommand({
             id: 'sync-contacts',
             name: 'Sync contacts with CardDAV',
