@@ -25,6 +25,10 @@ function encodeBase64(str: string): string {
     return str;
 }
 
+function formatIcsTimestamp(date: Date): string {
+    return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+}
+
 interface FieldMap {
     fullName: string;
     phone: string;
@@ -474,7 +478,12 @@ async openDashboard() {
 
 
     async updateBirthdayCalendar() {
-        const events: string[] = ['BEGIN:VCALENDAR', 'VERSION:2.0'];
+        const events: string[] = [
+            'BEGIN:VCALENDAR',
+            'VERSION:2.0',
+            'PRODID:-//Contact Link//EN',
+            'CALSCALE:GREGORIAN'
+        ];
         for (const file of this.app.vault.getMarkdownFiles()) {
             const cache = this.app.metadataCache.getFileCache(file);
             const fm: any = cache?.frontmatter || {};
@@ -486,6 +495,7 @@ async openDashboard() {
                 const name = fm[this.settings.fieldMap.fullName] || file.basename;
                 events.push('BEGIN:VEVENT');
                 events.push(`UID:${uid}`);
+                events.push(`DTSTAMP:${formatIcsTimestamp(new Date())}`);
                 events.push(`DTSTART;VALUE=DATE:${dt}`);
                 events.push(`RRULE:FREQ=YEARLY`);
                 events.push(`SUMMARY:${name} Birthday`);
