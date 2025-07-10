@@ -4,7 +4,7 @@
 
 set -e
 
-: "${REPO_URL:=https://raw.githubusercontent.com/Fleench/Contact-Link/main}"
+: "${REPO_URL:=https://raw.githubusercontent.com/Fleench/Contact-Link/refs/heads/master/}"
 
 FILES="main.ts styles.css manifest.json versions.json"
 
