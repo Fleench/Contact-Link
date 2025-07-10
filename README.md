@@ -35,22 +35,6 @@ https://contacts.zoho.com/dav/<your-email>/contacts/
 
 Use your Zoho credentials for authentication.
 
-### Local CardDAV Proxy
-
-A small Python server is provided in `local_carddav_server.py` to cache your Zoho
-contacts and expose them locally. Configure it with a `.env` file based on
-`.env.example`.  You can also set `LOCAL_USERNAME` and `LOCAL_PASSWORD` to
-require Basic Auth when accessing the proxy:
-
-```bash
-pip install -r requirements.txt
-cp .env.example .env  # then edit the values
-python local_carddav_server.py
-```
-
-The plugin can then point to `http://localhost:8000/` as its CardDAV URL. The
-server keeps a cache of vCard files in the directory specified by `CACHE_DIR`
-and forwards updates to your Zoho account.
 
 ## Getting Started
 
