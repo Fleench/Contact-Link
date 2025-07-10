@@ -754,7 +754,9 @@ class DashboardModal extends Modal {
         const controls = contentEl.createDiv({ cls: 'cl-dashboard-controls' });
         const searchInput = controls.createEl('input', { type: 'text', placeholder: 'Search' });
         const filterSelect = controls.createEl('select');
-        ['all','family','friends','clients','work'].forEach(v => filterSelect.add(new Option(v.charAt(0).toUpperCase()+v.slice(1), v)));
+        const rels = Array.from(new Set(this.contacts.map(c => (c.relationship || '').trim()).filter(r => r))).sort();
+        filterSelect.add(new Option('All', 'all'));
+        rels.forEach(r => filterSelect.add(new Option(r.charAt(0).toUpperCase() + r.slice(1), r.toLowerCase())));
         const calBtn = controls.createEl('button', { text: 'Calendar view' });
         calBtn.addEventListener('click', () => new BirthdayCalendarModal(this.app, this.plugin, this.contacts).open());
         this.grid = contentEl.createDiv({ cls: 'cl-card-grid' });
@@ -845,7 +847,9 @@ class DashboardView extends ItemView {
         const controls = contentEl.createDiv({ cls: 'cl-dashboard-controls' });
         const searchInput = controls.createEl('input', { type: 'text', placeholder: 'Search' });
         const filterSelect = controls.createEl('select');
-        ['all','family','friends','clients','work'].forEach(v => filterSelect.add(new Option(v.charAt(0).toUpperCase()+v.slice(1), v)));
+        const rels = Array.from(new Set(this.contacts.map(c => (c.relationship || '').trim()).filter(r => r))).sort();
+        filterSelect.add(new Option('All', 'all'));
+        rels.forEach(r => filterSelect.add(new Option(r.charAt(0).toUpperCase() + r.slice(1), r.toLowerCase())));
         const calBtn = controls.createEl('button', { text: 'Calendar view' });
         calBtn.addEventListener('click', () => new BirthdayCalendarModal(this.app, this.plugin, this.contacts).open());
         this.grid = contentEl.createDiv({ cls: 'cl-card-grid' });
