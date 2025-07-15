@@ -123,6 +123,10 @@ function sanitizeName(name: string): string {
     return name.replace(/[\\/:*?"<>|]/g, '_').trim();
 }
 
+function ensureTrailingSlash(url: string): string {
+    return url.endsWith('/') ? url : url + '/';
+}
+
 export default class ContactLinkPlugin extends Plugin {
     settings: ContactLinkSettings;
 
@@ -327,7 +331,7 @@ export default class ContactLinkPlugin extends Plugin {
 
     async pushContactsToCardDAV(serverMap?: Map<string, Contact>) {
         if (!this.settings.carddavUrl) return;
-        const base = this.settings.carddavUrl.replace(/\/$/, "");
+        const base = ensureTrailingSlash(this.settings.carddavUrl);
         const auth = 'Basic ' + encodeBase64(`${this.settings.username}:${this.settings.password}`);
         for (const file of this.app.vault.getMarkdownFiles()) {
             const cache = this.app.metadataCache.getFileCache(file);
@@ -342,7 +346,7 @@ export default class ContactLinkPlugin extends Plugin {
             const orig = serverMap?.get(contact.uid);
             if (orig && JSON.stringify(orig) === JSON.stringify(contact)) continue;
             const vcard = buildVCard(contact);
-            const url = `${base}/${contact.uid}.vcf`;
+            const url = `${base}${contact.uid}.vcf`;
             const res = await requestUrl({
                 url,
                 method: 'PUT',
@@ -394,8 +398,9 @@ export default class ContactLinkPlugin extends Plugin {
                 .map(h => h.textContent || '')
                 .filter(h => h.endsWith('.vcf'));
             const contacts: Contact[] = [];
+            const base = ensureTrailingSlash(this.settings.carddavUrl);
             for (const href of hrefs) {
-                const url = new URL(href, this.settings.carddavUrl).toString();
+                const url = new URL(href, base).toString();
                 const res = await requestUrl({ url, headers: { 'Authorization': auth } });
                 if (res.status < 200 || res.status >= 300) continue;
                 const c = parseVCard(res.text);
@@ -679,11 +684,11 @@ async openDashboard() {
         }
         if (!contact.fullName) contact.fullName = file.basename;
         if (!this.settings.carddavUrl) return;
-        const base = this.settings.carddavUrl.replace(/\/$/, "");
+        const base = ensureTrailingSlash(this.settings.carddavUrl);
         const auth = 'Basic ' + encodeBase64(`${this.settings.username}:${this.settings.password}`);
         const vcard = buildVCard(contact);
         await requestUrl({
-            url: `${base}/${contact.uid}.vcf`,
+            url: `${base}${contact.uid}.vcf`,
             method: 'PUT',
             headers: { 'Authorization': auth, 'Content-Type': 'text/vcard' },
             body: vcard
