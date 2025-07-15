@@ -418,7 +418,11 @@ export default class ContactLinkPlugin extends Plugin {
             return new DOMParser().parseFromString(res.text, 'application/xml');
         };
         try {
-            const base = this.settings.carddavUrl.replace(/\/$/, '');
+            let base = this.settings.carddavUrl.replace(/\/$/, '');
+            const parsed = new URL(base);
+            if (parsed.pathname === '' || parsed.pathname === '/') {
+                base = base.replace(/\/$/, '') + '/.well-known/carddav';
+            }
             // current-user-principal discovery
             let doc = await propfind(base, '0', '<?xml version="1.0"?><propfind xmlns="DAV:"><prop><current-user-principal/></prop></propfind>');
             const principalHref = doc.getElementsByTagNameNS('DAV:', 'href')[0]?.textContent;

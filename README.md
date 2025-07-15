@@ -35,6 +35,16 @@ https://contacts.zoho.com/dav/<your-email>/contacts/
 
 Use your Zoho credentials for authentication.
 
+### Fruux CardDAV Setup
+
+Set the CardDAV URL to:
+
+```
+https://dav.fruux.com
+```
+
+The plugin will automatically discover your address books via the `/.well-known/carddav` endpoint. Choose the correct collection from the dropdown once the books are listed.
+
 
 ## Getting Started
 
