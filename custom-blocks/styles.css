@@ -1,0 +1,99 @@
+/* ChatGPT Codex 2025-12-03 */
+.custom-block-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 12px 0;
+  background: var(--background-primary-alt);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.custom-block-header {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.custom-block-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-normal);
+}
+
+.custom-block-tag-row,
+.custom-block-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.custom-block-tag {
+  border-radius: 16px;
+  padding: 2px 10px;
+  background: var(--tag-background);
+  color: var(--tag-color);
+  border: 1px solid var(--tag-border-color);
+}
+
+/* Example styles for the default block types */
+.cb-card.info-card .cb-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.cb-card.info-card .cb-body {
+  color: var(--text-muted);
+}
+
+.cb-card.contact-card .cb-title,
+.cb-card.event-card .cb-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.cb-card .cb-detail {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 4px;
+  align-items: center;
+}
+
+.cb-card .cb-label {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.cb-card .cb-notes {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.cb-card.event-card .cb-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cb-card.event-card .cb-date {
+  font-weight: 600;
+}
+
+.cb-card.event-card .cb-time {
+  color: var(--text-muted);
+}
+
+.custom-blocks-warning {
+  padding: 10px;
+  border: 1px solid var(--text-accent);
+  border-radius: 8px;
+  color: var(--text-accent);
+  background: rgba(255, 153, 0, 0.05);
+}

@@ -1,0 +1,23 @@
+# ChatGPT Codex 2025-12-03
+# Starter block definitions for the Custom Blocks plugin.
+blockTypes:
+  - name: information
+    displayName: Information
+    className: cb-card info-card
+    template: |
+      <div class="cb-title">{{Title}}</div>
+      <div class="cb-body">{{Description}}</div>
+  - name: contact card
+    displayName: Contact Card
+    className: cb-card contact-card
+    template: |
+      <div class="cb-title">{{Name}}</div>
+      <div class="cb-detail"><span class="cb-label">Email</span><span>{{Email}}</span></div>
+      <div class="cb-detail"><span class="cb-label">Phone</span><span>{{Phone}}</span></div>
+      <div class="cb-notes">{{Notes}}</div>
+  - name: event card
+    displayName: Event Card
+    className: cb-card event-card
+    template: |
+      <div class="cb-row"><span class="cb-title">{{Name}}</span><span class="cb-date">{{Date}}</span></div>
+      <div class="cb-row"><span class="cb-time">{{Time}}</span></div>
