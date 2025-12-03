@@ -90,7 +90,7 @@ export default class CustomBlocksPlugin extends Plugin {
     }
   }
 
-  private async reloadDefinitions() {
+  public async reloadDefinitions() {
     await this.loadBlockDefinitions();
     new Notice("Custom Blocks configuration reloaded");
   }
@@ -194,15 +194,15 @@ export default class CustomBlocksPlugin extends Plugin {
   private tagsToHtml(tags: string[]): string {
     if (tags.length === 0) return "";
     return tags
-      .map((tag) => `<a class="tag custom-block-tag" href="${tag}">${tag}</a>`)
-      .join(" ");
+    .map((tag) => `<a class="tag custom-block-tag" href="#/${tag.substring(1)}">${tag}</a>`)
+    .join(" ");
   }
 
   private injectTagPills(container: HTMLElement, tags: string[]) {
     if (tags.length === 0) return;
     const row = container.createDiv({ cls: "custom-block-tags" });
     tags.forEach((tag) => {
-      row.innerHTML += `<a class="tag custom-block-tag" href="${tag}">${tag}</a>`;
+      row.innerHTML += `<a class="tag custom-block-tag" href="#/${tag.substring(1)}">${tag}</a>`;
     });
   }
 
