@@ -1,0 +1,10 @@
+{
+  "id": "custom-blocks",
+  "name": "Custom Blocks",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Render user-defined custom block components via a shared block code block language.",
+  "author": "ChatGPT Codex",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}
