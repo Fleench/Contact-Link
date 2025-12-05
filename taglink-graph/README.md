@@ -41,3 +41,4 @@ An Obsidian plugin that visualizes how your daily notes relate to each other thr
 - **No view/report generated:** Ensure you've run `npm run build` so a compiled `main.js` exists in your plugin folder—Obsidian cannot load the TypeScript source alone.
 - **Empty graph:** Confirm your daily notes contain tags; notes without tags are filtered out.
 - **Missing daily notes notice:** Create notes under `Daily/` or rename them to the `YYYY-MM-DD` pattern so they are detected.
+- **Build fails on Android/shared storage:** Some Android storage locations are mounted with `noexec`, which blocks the native esbuild binary. The build now automatically falls back to a WebAssembly-based compiler in those environments, but make sure you've installed dependencies (`npm install`) so the `esbuild-wasm` package is available.

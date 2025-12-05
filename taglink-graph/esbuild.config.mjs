@@ -1,6 +1,13 @@
-import esbuild from "esbuild";
-import process from "process";
+// Updated by ChatGPT Codex 2025-12-05
 import builtins from "builtin-modules";
+import process from "process";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
+
+import esbuild from "esbuild";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const banner =
 `/*
@@ -11,38 +18,67 @@ if you want to view the source, please visit the github repository of this plugi
 
 const prod = (process.argv[2] === "production");
 
-const context = await esbuild.context({
-	banner: {
-		js: banner,
-	},
-	entryPoints: ["main.ts"],
-	bundle: true,
-	external: [
-		"obsidian",
-		"electron",
-		"@codemirror/autocomplete",
-		"@codemirror/collab",
-		"@codemirror/commands",
-		"@codemirror/language",
-		"@codemirror/lint",
-		"@codemirror/search",
-		"@codemirror/state",
-		"@codemirror/view",
-		"@lezer/common",
-		"@lezer/highlight",
-		"@lezer/lr",
-		...builtins],
-	format: "cjs",
-	target: "es2018",
-	logLevel: "info",
-	sourcemap: prod ? false : "inline",
-	treeShaking: true,
-	outfile: "main.js",
-});
+const buildOptions = {
+        banner: {
+                js: banner,
+        },
+        entryPoints: ["main.ts"],
+        bundle: true,
+        external: [
+                "obsidian",
+                "electron",
+                "@codemirror/autocomplete",
+                "@codemirror/collab",
+                "@codemirror/commands",
+                "@codemirror/language",
+                "@codemirror/lint",
+                "@codemirror/search",
+                "@codemirror/state",
+                "@codemirror/view",
+                "@lezer/common",
+                "@lezer/highlight",
+                "@lezer/lr",
+                ...builtins],
+        format: "cjs",
+        target: "es2018",
+        logLevel: "info",
+        sourcemap: prod ? false : "inline",
+        treeShaking: true,
+        outfile: "main.js",
+};
+
+const isExecPermissionError = (error) => {
+        if (!error) return false;
+        const message = String(error?.message ?? "");
+        return message.includes("EACCES") || message.includes("ENOENT") || message.includes("ENOEXEC");
+};
+
+const createWasmContext = async () => {
+        const esbuildWasm = await import("esbuild-wasm");
+        const wasmURL = join(__dirname, "node_modules", "esbuild-wasm", "esbuild.wasm");
+
+        await esbuildWasm.initialize({ wasmURL, worker: false });
+        return esbuildWasm.context(buildOptions);
+};
+
+const createContextWithFallback = async () => {
+        try {
+                return await esbuild.context(buildOptions);
+        } catch (error) {
+                if (!isExecPermissionError(error)) {
+                        throw error;
+                }
+
+                console.warn("Native esbuild binary unavailable; falling back to WebAssembly build. This is slower but works on no-exec storage.");
+                return await createWasmContext();
+        }
+};
+
+const context = await createContextWithFallback();
 
 if (prod) {
-	await context.rebuild();
-	process.exit(0);
+        await context.rebuild();
+        process.exit(0);
 } else {
-	await context.watch();
+        await context.watch();
 }
