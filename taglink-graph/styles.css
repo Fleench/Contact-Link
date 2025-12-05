@@ -1,0 +1,19 @@
+/* Modified by ChatGPT Codex 2025-05-15 */
+.tag-link-graph-view {
+    height: 100%;
+    width: 100%;
+}
+
+.tag-link-graph-wrapper {
+    position: relative;
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(135deg, #1e1e2e 0%, #0f1020 100%);
+    overflow: hidden;
+}
+
+.tag-link-graph-wrapper canvas {
+    display: block;
+    height: 100%;
+    width: 100%;
+}
