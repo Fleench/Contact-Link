@@ -1,0 +1,9 @@
+{
+  "id": "taglink-graph",
+  "name": "Tag-Link Graph (shared tags = links)",
+  "version": "1.0.0",
+  "minAppVersion": "1.6.0",
+  "description": "Graph where notes are connected if they share any tag. Perfect for daily notes + tags.",
+  "author": "You",
+  "isDesktopOnly": false
+}
