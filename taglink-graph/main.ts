@@ -312,23 +312,15 @@ export default class TagLinkGraphPlugin extends Plugin {
 
     async openVisualGraph() {
         const { workspace } = this.app;
-        
-        let leaf: WorkspaceLeaf | null = null;
-        const leaves = workspace.getLeavesOfType(VIEW_TYPE_TAG_GRAPH);
 
-        if (leaves.length > 0) {
-            // If view already exists, reveal it
-            leaf = leaves[0];
-        } else {
-            // Create new leaf
-            leaf = workspace.getRightLeaf(false);
-            await leaf!.setViewState({
-                type: VIEW_TYPE_TAG_GRAPH,
-                active: true,
-            });
-        }
+        // Always create a fresh tab so the view appears on mobile and desktop
+        const leaf = workspace.getLeaf('tab');
+        await leaf.setViewState({
+            type: VIEW_TYPE_TAG_GRAPH,
+            active: true,
+        });
 
-        workspace.revealLeaf(leaf!);
+        workspace.revealLeaf(leaf);
     }
 
     async openTagLinkReport() {
