@@ -1,7 +1,23 @@
-/* Modified by ChatGPT Codex 2025-05-15 */
+/* Modified by ChatGPT Codex 2025-12-05 */
 .tag-link-graph-view {
     height: 100%;
     width: 100%;
+    padding: 12px;
+    gap: 8px;
+    background: radial-gradient(circle at 20% 20%, rgba(189, 147, 249, 0.06), transparent 40%),
+        radial-gradient(circle at 80% 0%, rgba(241, 250, 140, 0.06), transparent 35%),
+        #0f1020;
+}
+
+.tag-link-graph-legend {
+    color: #e9e9ed;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: rgba(34, 34, 54, 0.75);
+    border: 1px solid rgba(189, 147, 249, 0.35);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
 .tag-link-graph-wrapper {
@@ -10,10 +26,14 @@
     width: 100%;
     background: linear-gradient(135deg, #1e1e2e 0%, #0f1020 100%);
     overflow: hidden;
+    border-radius: 12px;
+    border: 1px solid rgba(98, 114, 164, 0.35);
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4);
 }
 
 .tag-link-graph-wrapper canvas {
     display: block;
     height: 100%;
     width: 100%;
+    filter: drop-shadow(0 0 8px rgba(189, 147, 249, 0.2));
 }
