@@ -11,7 +11,7 @@ An Obsidian plugin that visualizes how your daily notes relate to each other thr
   - `Generate Tag-Connected Graph Report`
 
 ## How notes and tags are detected
-- The plugin scans markdown files whose path starts with `Daily/` **or** whose filename matches the pattern `YYYY-MM-DD` (e.g., `2024-05-01.md`).
+- The plugin scans markdown files whose path starts with `Daily/` **or** whose filename matches the pattern `YYYY-MM-DD` (e.g., `2024-05-01.md`). If no daily notes are found, it falls back to scanning all markdown files in the vault.
 - Tags are collected from both frontmatter/metadata and inline `#tags` within the note content.
 - Only notes with at least one detected tag are included in the graph.
 

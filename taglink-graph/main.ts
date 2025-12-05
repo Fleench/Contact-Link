@@ -123,12 +123,20 @@ class TagLinkGraphView extends ItemView {
     async loadGraph() {
         try {
             console.log('[Tag-Link Graph] Starting graph load...');
-            const files = this.plugin.getDailyNotes();
+            let files = this.plugin.getDailyNotes();
+            let scopeLabel = 'daily notes';
             console.log('[Tag-Link Graph] Daily note candidates', files.map(f => f.path));
 
             if (files.length === 0) {
-                new Notice('No daily notes found!');
-                this.legend.setText('No daily notes with tags were found.');
+                console.log('[Tag-Link Graph] No daily notes found, falling back to all markdown files');
+                files = this.app.vault.getMarkdownFiles();
+                scopeLabel = 'markdown notes';
+                new Notice('No daily notes found. Scanning all markdown notes instead.');
+            }
+
+            if (files.length === 0) {
+                new Notice('No notes found in the vault!');
+                this.legend.setText('No notes were found to scan.');
                 return;
             }
 
@@ -136,8 +144,8 @@ class TagLinkGraphView extends ItemView {
             this.links = this.plugin.generateTagConnections(noteToTags);
 
             if (noteToTags.size === 0) {
-                new Notice('No tags found in the scanned daily notes.');
-                this.legend.setText('No tags found in the scanned daily notes.');
+                new Notice(`No tags found in the scanned ${scopeLabel}.`);
+                this.legend.setText(`No tags found in the scanned ${scopeLabel}.`);
                 return;
             }
 
@@ -155,7 +163,7 @@ class TagLinkGraphView extends ItemView {
                     vy: 0
                 }));
 
-            const legendText = `${this.nodes.length} notes, ${this.links.length} tag links`;
+            const legendText = `${this.nodes.length} ${scopeLabel}, ${this.links.length} tag links`;
             this.legend.setText(legendText);
             new Notice(`Loaded ${legendText}`);
             console.log('[Tag-Link Graph] Graph data ready', { nodes: this.nodes.length, links: this.links.length });
