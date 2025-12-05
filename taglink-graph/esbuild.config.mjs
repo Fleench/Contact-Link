@@ -4,8 +4,6 @@ import process from "process";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
-import esbuild from "esbuild";
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -53,6 +51,18 @@ const isExecPermissionError = (error) => {
         return message.includes("EACCES") || message.includes("ENOENT") || message.includes("ENOEXEC");
 };
 
+const loadNativeEsbuild = async () => {
+        try {
+                return await import("esbuild");
+        } catch (error) {
+                if (!isExecPermissionError(error)) {
+                        throw error;
+                }
+
+                return null;
+        }
+};
+
 const createWasmContext = async () => {
         const esbuildWasm = await import("esbuild-wasm");
         const wasmURL = join(__dirname, "node_modules", "esbuild-wasm", "esbuild.wasm");
@@ -62,16 +72,25 @@ const createWasmContext = async () => {
 };
 
 const createContextWithFallback = async () => {
-        try {
-                return await esbuild.context(buildOptions);
-        } catch (error) {
-                if (!isExecPermissionError(error)) {
-                        throw error;
-                }
+        const esbuild = await loadNativeEsbuild();
 
-                console.warn("Native esbuild binary unavailable; falling back to WebAssembly build. This is slower but works on no-exec storage.");
-                return await createWasmContext();
+        if (esbuild) {
+                try {
+                        return await esbuild.context(buildOptions);
+                } catch (error) {
+                        if (!isExecPermissionError(error)) {
+                                throw error;
+                        }
+
+                        console.warn("Native esbuild binary unavailable; falling back to WebAssembly build. This is slower but works on no-exec storage.");
+                }
         }
+
+        if (!esbuild) {
+                console.warn("Native esbuild package missing; falling back to WebAssembly build.");
+        }
+
+        return await createWasmContext();
 };
 
 const context = await createContextWithFallback();
