@@ -96,7 +96,23 @@ class TagLinkGraphView extends ItemView {
         this.startSimulation();
     }
 
-    resizeCanvas() {
+    
+
+    startSimulation() {
+        console.log('[Tag-Link Graph] Starting force simulation loop');
+        const animate = () => {
+            if (this.isSimulating) {
+                this.updatePhysics();
+            }
+            this.draw();
+            requestAnimationFrame(animate);
+        };
+        animate();
+    }
+
+// Replace your resizeCanvas, loadGraph, updatePhysics, and draw methods with these fixed versions:
+
+resizeCanvas() {
     const rect = this.canvas.getBoundingClientRect();
     let width = rect.width;
     let height = rect.height;
@@ -152,17 +168,23 @@ async loadGraph() {
         const rect = this.canvas.getBoundingClientRect();
         const center = { x: rect.width / 2, y: rect.height / 2 };
         
+        console.log('[Tag-Link Graph] Initializing nodes at center:', center);
+        
         this.nodes = files
             .filter(file => noteToTags.has(file.path))
             .map(file => ({
                 id: file.path,
                 label: file.basename,
                 path: file.path,
-                x: center.x + (Math.random() - 0.5) * 200,
-                y: center.y + (Math.random() - 0.5) * 200,
+                x: center.x + (Math.random() - 0.5) * 100,
+                y: center.y + (Math.random() - 0.5) * 100,
                 vx: 0,
                 vy: 0
             }));
+
+        console.log('[Tag-Link Graph] Nodes initialized:', this.nodes.map(n => 
+            ({label: n.label, x: n.x, y: n.y})
+        ));
 
         const legendText = `${this.nodes.length} notes, ${this.links.length} tag links`;
         this.legend.setText(legendText);
@@ -175,79 +197,107 @@ async loadGraph() {
     }
 }
 
-    startSimulation() {
-        console.log('[Tag-Link Graph] Starting force simulation loop');
-        const animate = () => {
-            if (this.isSimulating) {
-                this.updatePhysics();
-            }
-            this.draw();
-            requestAnimationFrame(animate);
-        };
-        animate();
-    }
-
 updatePhysics() {
-    const repulsion = 5000;
-    const attraction = 0.01;
-    const damping = 0.85;
-    const centerPull = 0.001;
+    if (this.nodes.length === 0) return;
+    
+    const repulsion = 3000;  // Reduced from 5000
+    const attraction = 0.005; // Reduced from 0.01
+    const damping = 0.9;      // Increased from 0.85 for more stability
+    const centerPull = 0.002; // Increased from 0.001
 
     // Use CSS dimensions for center calculation
     const rect = this.canvas.getBoundingClientRect();
     const center = { x: rect.width / 2, y: rect.height / 2 };
+
+    // Reset forces
+    for (const node of this.nodes) {
+        if (!node.vx) node.vx = 0;
+        if (!node.vy) node.vy = 0;
+    }
 
     // Apply forces
     for (let i = 0; i < this.nodes.length; i++) {
         const node = this.nodes[i];
         
         // Repulsion between all nodes
-        for (let j = 0; j < this.nodes.length; j++) {
-            if (i === j) continue;
+        for (let j = i + 1; j < this.nodes.length; j++) {
             const other = this.nodes[j];
             const dx = node.x! - other.x!;
             const dy = node.y! - other.y!;
-            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-            const force = repulsion / (dist * dist);
-            node.vx! += (dx / dist) * force;
-            node.vy! += (dy / dist) * force;
+            const distSq = dx * dx + dy * dy;
+            const dist = Math.sqrt(distSq) || 1;
+            
+            // Prevent division by very small numbers
+            if (dist < 1) continue;
+            
+            const force = repulsion / distSq;
+            const fx = (dx / dist) * force;
+            const fy = (dy / dist) * force;
+            
+            node.vx! += fx;
+            node.vy! += fy;
+            other.vx! -= fx;
+            other.vy! -= fy;
         }
 
-        // Center pull
+        // Center pull - stronger for nodes far from center
         const dcx = center.x - node.x!;
         const dcy = center.y - node.y!;
-        node.vx! += dcx * centerPull;
-        node.vy! += dcy * centerPull;
+        const distFromCenter = Math.sqrt(dcx * dcx + dcy * dcy);
+        const centerForce = centerPull * distFromCenter;
+        node.vx! += dcx * centerForce;
+        node.vy! += dcy * centerForce;
     }
 
     // Attraction along links
     for (const link of this.links) {
-        const source = this.nodes.find(n => n.id === link.source)!;
-        const target = this.nodes.find(n => n.id === link.target)!;
+        const source = this.nodes.find(n => n.id === link.source);
+        const target = this.nodes.find(n => n.id === link.target);
+        if (!source || !target) continue;
+        
         const dx = target.x! - source.x!;
         const dy = target.y! - source.y!;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const force = attraction * dist * link.sharedTagCount;
-        source.vx! += dx * force;
-        source.vy! += dy * force;
-        target.vx! -= dx * force;
-        target.vy! -= dy * force;
+        const force = attraction * dist * Math.sqrt(link.sharedTagCount);
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+        
+        source.vx! += fx;
+        source.vy! += fy;
+        target.vx! -= fx;
+        target.vy! -= fy;
     }
 
-    // Update positions
+    // Update positions with velocity clamping
+    const maxVelocity = 10; // Clamp maximum velocity
     for (const node of this.nodes) {
         if (this.draggedNode === node) continue;
+        
+        // Clamp velocities
+        const speed = Math.sqrt(node.vx! * node.vx! + node.vy! * node.vy!);
+        if (speed > maxVelocity) {
+            node.vx! = (node.vx! / speed) * maxVelocity;
+            node.vy! = (node.vy! / speed) * maxVelocity;
+        }
+        
         node.vx! *= damping;
         node.vy! *= damping;
         node.x! += node.vx!;
         node.y! += node.vy!;
+        
+        // Keep nodes within bounds with some margin
+        const margin = 50;
+        node.x! = Math.max(margin, Math.min(rect.width - margin, node.x!));
+        node.y! = Math.max(margin, Math.min(rect.height - margin, node.y!));
     }
 
     // Slow down over time
-    const maxVelocity = Math.max(...this.nodes.map(n =>
-        Math.sqrt(n.vx! * n.vx! + n.vy! * n.vy!)
-    ));
-    if (maxVelocity < 0.1) {
+    const totalVelocity = this.nodes.reduce((sum, n) => 
+        sum + Math.sqrt(n.vx! * n.vx! + n.vy! * n.vy!), 0
+    );
+    const avgVelocity = totalVelocity / this.nodes.length;
+    
+    if (avgVelocity < 0.05) {
         this.isSimulating = false;
         console.log('[Tag-Link Graph] Simulation settled');
     }
@@ -277,7 +327,8 @@ draw() {
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
 
-    // Draw links
+    // Draw links first (behind nodes)
+    ctx.shadowBlur = 0;
     for (const link of this.links) {
         const source = this.nodes.find(n => n.id === link.source);
         const target = this.nodes.find(n => n.id === link.target);
@@ -288,27 +339,28 @@ draw() {
         else if (link.sharedTagCount >= 3) color = '#f1fa8c';
 
         ctx.strokeStyle = color;
-        ctx.lineWidth = Math.min(link.sharedTagCount, 5);
-        ctx.globalAlpha = 0.6;
-        ctx.shadowBlur = 6;
-        ctx.shadowColor = color;
+        ctx.lineWidth = Math.min(link.sharedTagCount * 0.5, 3);
+        ctx.globalAlpha = 0.4;
         ctx.beginPath();
         ctx.moveTo(source.x!, source.y!);
         ctx.lineTo(target.x!, target.y!);
         ctx.stroke();
     }
 
-    // Draw nodes
+    // Draw nodes on top
     ctx.globalAlpha = 1;
     ctx.shadowBlur = 0;
+    
     for (const node of this.nodes) {
-        // Node circle
-        ctx.fillStyle = '#bd93f9';
+        // Node circle with glow
         ctx.shadowColor = '#bd93f9';
-        ctx.shadowBlur = 12;
+        ctx.shadowBlur = 8;
+        ctx.fillStyle = '#bd93f9';
         ctx.beginPath();
-        ctx.arc(node.x!, node.y!, 8, 0, Math.PI * 2);
+        ctx.arc(node.x!, node.y!, 6, 0, Math.PI * 2);
         ctx.fill();
+        
+        // Node border
         ctx.shadowBlur = 0;
         ctx.strokeStyle = '#44475a';
         ctx.lineWidth = 2;
@@ -316,12 +368,30 @@ draw() {
 
         // Node label
         ctx.fillStyle = '#f8f8f2';
-        ctx.font = '12px sans-serif';
+        ctx.font = '11px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(node.label, node.x!, node.y! - 15);
+        ctx.textBaseline = 'middle';
+        
+        // Add text background for readability
+        const metrics = ctx.measureText(node.label);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(
+            node.x! - metrics.width / 2 - 2,
+            node.y! - 20,
+            metrics.width + 4,
+            14
+        );
+        
+        ctx.fillStyle = '#f8f8f2';
+        ctx.fillText(node.label, node.x!, node.y! - 13);
     }
 
     ctx.restore();
+    
+    // Debug info every 60 frames
+    if (Math.random() < 0.016) {
+        console.log('[Tag-Link Graph] Drawing frame with', this.nodes.length, 'nodes');
+    }
 }
 
     onMouseDown(e: MouseEvent) {
