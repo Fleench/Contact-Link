@@ -97,82 +97,83 @@ class TagLinkGraphView extends ItemView {
     }
 
     resizeCanvas() {
-        // Respect the rendered size (CSS) while providing a crisp canvas
+    const rect = this.canvas.getBoundingClientRect();
+    let width = rect.width;
+    let height = rect.height;
+
+    if (width === 0 || height === 0) {
+        const parent = this.canvas.parentElement as HTMLElement | null;
+        width = parent?.clientWidth ?? 720;
+        height = parent?.clientHeight ?? 480;
+        console.log('[Tag-Link Graph] Canvas had zero size, using fallback size', { width, height });
+    }
+
+    if (width === 0 || height === 0) return;
+
+    const pixelRatio = window.devicePixelRatio || 1;
+    
+    // Store CSS dimensions for drawing calculations
+    this.canvas.style.width = width + 'px';
+    this.canvas.style.height = height + 'px';
+    
+    // Set actual canvas size with pixel ratio for crisp rendering
+    this.canvas.width = width * pixelRatio;
+    this.canvas.height = height * pixelRatio;
+    
+    // Scale context to match pixel ratio
+    this.ctx?.setTransform(1, 0, 0, 1, 0, 0);
+    this.ctx?.scale(pixelRatio, pixelRatio);
+    
+    console.log('[Tag-Link Graph] Canvas resized', { width, height, pixelRatio });
+}
+
+async loadGraph() {
+    try {
+        console.log('[Tag-Link Graph] Starting graph load...');
+        const files = this.plugin.getDailyNotes();
+        console.log('[Tag-Link Graph] Daily note candidates', files.map(f => f.path));
+
+        if (files.length === 0) {
+            new Notice('No daily notes found!');
+            this.legend.setText('No daily notes with tags were found.');
+            return;
+        }
+
+        const noteToTags = await this.plugin.buildNoteTagsMap(files);
+        this.links = this.plugin.generateTagConnections(noteToTags);
+
+        if (noteToTags.size === 0) {
+            new Notice('No tags found in the scanned daily notes.');
+            this.legend.setText('No tags found in the scanned daily notes.');
+            return;
+        }
+
+        // Use CSS dimensions (not canvas.width/height which are scaled by pixelRatio)
         const rect = this.canvas.getBoundingClientRect();
-        let width = rect.width;
-        let height = rect.height;
+        const center = { x: rect.width / 2, y: rect.height / 2 };
+        
+        this.nodes = files
+            .filter(file => noteToTags.has(file.path))
+            .map(file => ({
+                id: file.path,
+                label: file.basename,
+                path: file.path,
+                x: center.x + (Math.random() - 0.5) * 200,
+                y: center.y + (Math.random() - 0.5) * 200,
+                vx: 0,
+                vy: 0
+            }));
 
-        // Fallback when the container hasn't laid out yet
-        if (width === 0 || height === 0) {
-            const parent = this.canvas.parentElement as HTMLElement | null;
-            width = parent?.clientWidth ?? 720;
-            height = parent?.clientHeight ?? 480;
-            console.log('[Tag-Link Graph] Canvas had zero size, using fallback size', { width, height });
-        }
-
-        if (width === 0 || height === 0) return;
-
-        const pixelRatio = window.devicePixelRatio || 1;
-        this.canvas.width = width * pixelRatio;
-        this.canvas.height = height * pixelRatio;
-        this.ctx?.setTransform(1, 0, 0, 1, 0, 0);
-        this.ctx?.scale(pixelRatio, pixelRatio);
-        console.log('[Tag-Link Graph] Canvas resized', { width, height, pixelRatio });
+        const legendText = `${this.nodes.length} notes, ${this.links.length} tag links`;
+        this.legend.setText(legendText);
+        new Notice(`Loaded ${legendText}`);
+        console.log('[Tag-Link Graph] Graph data ready', { nodes: this.nodes.length, links: this.links.length });
+    } catch (error) {
+        console.error('[Tag-Link Graph] Error while loading graph:', error);
+        new Notice('Error loading tag graph. Check console for details.');
+        this.legend.setText('Failed to load graph');
     }
-
-    async loadGraph() {
-        try {
-            console.log('[Tag-Link Graph] Starting graph load...');
-            let files = this.plugin.getDailyNotes();
-            let scopeLabel = 'daily notes';
-            console.log('[Tag-Link Graph] Daily note candidates', files.map(f => f.path));
-
-            if (files.length === 0) {
-                console.log('[Tag-Link Graph] No daily notes found, falling back to all markdown files');
-                files = this.app.vault.getMarkdownFiles();
-                scopeLabel = 'markdown notes';
-                new Notice('No daily notes found. Scanning all markdown notes instead.');
-            }
-
-            if (files.length === 0) {
-                new Notice('No notes found in the vault!');
-                this.legend.setText('No notes were found to scan.');
-                return;
-            }
-
-            const noteToTags = await this.plugin.buildNoteTagsMap(files);
-            this.links = this.plugin.generateTagConnections(noteToTags);
-
-            if (noteToTags.size === 0) {
-                new Notice(`No tags found in the scanned ${scopeLabel}.`);
-                this.legend.setText(`No tags found in the scanned ${scopeLabel}.`);
-                return;
-            }
-
-            // Initialize nodes with random positions
-            const center = { x: this.canvas.width / 2, y: this.canvas.height / 2 };
-            this.nodes = files
-                .filter(file => noteToTags.has(file.path))
-                .map(file => ({
-                    id: file.path,
-                    label: file.basename,
-                    path: file.path,
-                    x: center.x + (Math.random() - 0.5) * 200,
-                    y: center.y + (Math.random() - 0.5) * 200,
-                    vx: 0,
-                    vy: 0
-                }));
-
-            const legendText = `${this.nodes.length} ${scopeLabel}, ${this.links.length} tag links`;
-            this.legend.setText(legendText);
-            new Notice(`Loaded ${legendText}`);
-            console.log('[Tag-Link Graph] Graph data ready', { nodes: this.nodes.length, links: this.links.length });
-        } catch (error) {
-            console.error('[Tag-Link Graph] Error while loading graph:', error);
-            new Notice('Error loading tag graph. Check console for details.');
-            this.legend.setText('Failed to load graph');
-        }
-    }
+}
 
     startSimulation() {
         console.log('[Tag-Link Graph] Starting force simulation loop');
@@ -186,135 +187,142 @@ class TagLinkGraphView extends ItemView {
         animate();
     }
 
-    updatePhysics() {
-        const repulsion = 5000;
-        const attraction = 0.01;
-        const damping = 0.85;
-        const centerPull = 0.001;
+updatePhysics() {
+    const repulsion = 5000;
+    const attraction = 0.01;
+    const damping = 0.85;
+    const centerPull = 0.001;
 
-        const center = { x: this.canvas.width / 2, y: this.canvas.height / 2 };
+    // Use CSS dimensions for center calculation
+    const rect = this.canvas.getBoundingClientRect();
+    const center = { x: rect.width / 2, y: rect.height / 2 };
 
-        // Apply forces
-        for (let i = 0; i < this.nodes.length; i++) {
-            const node = this.nodes[i];
-            
-            // Repulsion between all nodes
-            for (let j = 0; j < this.nodes.length; j++) {
-                if (i === j) continue;
-                const other = this.nodes[j];
-                const dx = node.x! - other.x!;
-                const dy = node.y! - other.y!;
-                const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-                const force = repulsion / (dist * dist);
-                node.vx! += (dx / dist) * force;
-                node.vy! += (dy / dist) * force;
-            }
-
-            // Center pull
-            const dcx = center.x - node.x!;
-            const dcy = center.y - node.y!;
-            node.vx! += dcx * centerPull;
-            node.vy! += dcy * centerPull;
-        }
-
-        // Attraction along links
-        for (const link of this.links) {
-            const source = this.nodes.find(n => n.id === link.source)!;
-            const target = this.nodes.find(n => n.id === link.target)!;
-            const dx = target.x! - source.x!;
-            const dy = target.y! - source.y!;
+    // Apply forces
+    for (let i = 0; i < this.nodes.length; i++) {
+        const node = this.nodes[i];
+        
+        // Repulsion between all nodes
+        for (let j = 0; j < this.nodes.length; j++) {
+            if (i === j) continue;
+            const other = this.nodes[j];
+            const dx = node.x! - other.x!;
+            const dy = node.y! - other.y!;
             const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-            const force = attraction * dist * link.sharedTagCount;
-            source.vx! += dx * force;
-            source.vy! += dy * force;
-            target.vx! -= dx * force;
-            target.vy! -= dy * force;
+            const force = repulsion / (dist * dist);
+            node.vx! += (dx / dist) * force;
+            node.vy! += (dy / dist) * force;
         }
 
-        // Update positions
-        for (const node of this.nodes) {
-            if (this.draggedNode === node) continue;
-            node.vx! *= damping;
-            node.vy! *= damping;
-            node.x! += node.vx!;
-            node.y! += node.vy!;
-        }
-
-        // Slow down over time
-        const maxVelocity = Math.max(...this.nodes.map(n =>
-            Math.sqrt(n.vx! * n.vx! + n.vy! * n.vy!)
-        ));
-        if (maxVelocity < 0.1) {
-            this.isSimulating = false;
-            console.log('[Tag-Link Graph] Simulation settled');
-        }
+        // Center pull
+        const dcx = center.x - node.x!;
+        const dcy = center.y - node.y!;
+        node.vx! += dcx * centerPull;
+        node.vy! += dcy * centerPull;
     }
 
-    draw() {
-        const ctx = this.ctx;
-        ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        ctx.save();
-        ctx.globalCompositeOperation = 'source-over';
-
-        // Subtle glow background similar to Obsidian's graph
-        const gradient = ctx.createRadialGradient(
-            this.canvas.width / 2,
-            this.canvas.height / 2,
-            Math.min(this.canvas.width, this.canvas.height) * 0.1,
-            this.canvas.width / 2,
-            this.canvas.height / 2,
-            Math.max(this.canvas.width, this.canvas.height)
-        );
-        gradient.addColorStop(0, 'rgba(98, 114, 164, 0.12)');
-        gradient.addColorStop(1, 'rgba(10, 10, 20, 0.08)');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        // Draw links
-        for (const link of this.links) {
-            const source = this.nodes.find(n => n.id === link.source);
-            const target = this.nodes.find(n => n.id === link.target);
-            if (!source || !target) continue;
-
-            // Color based on strength
-            let color = '#6272a4';
-            if (link.sharedTagCount >= 5) color = '#ff5555';
-            else if (link.sharedTagCount >= 3) color = '#f1fa8c';
-
-            ctx.strokeStyle = color;
-            ctx.lineWidth = Math.min(link.sharedTagCount, 5);
-            ctx.globalAlpha = 0.6;
-            ctx.shadowBlur = 6;
-            ctx.shadowColor = color;
-            ctx.beginPath();
-            ctx.moveTo(source.x!, source.y!);
-            ctx.lineTo(target.x!, target.y!);
-            ctx.stroke();
-        }
-
-        // Draw nodes
-        ctx.globalAlpha = 1;
-        for (const node of this.nodes) {
-            // Node circle
-            ctx.fillStyle = '#bd93f9';
-            ctx.shadowColor = '#bd93f9';
-            ctx.shadowBlur = 12;
-            ctx.beginPath();
-            ctx.arc(node.x!, node.y!, 8, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = '#44475a';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-
-            // Node label
-            ctx.fillStyle = '#f8f8f2';
-            ctx.font = '12px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText(node.label, node.x!, node.y! - 15);
-        }
-
-        ctx.restore();
+    // Attraction along links
+    for (const link of this.links) {
+        const source = this.nodes.find(n => n.id === link.source)!;
+        const target = this.nodes.find(n => n.id === link.target)!;
+        const dx = target.x! - source.x!;
+        const dy = target.y! - source.y!;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const force = attraction * dist * link.sharedTagCount;
+        source.vx! += dx * force;
+        source.vy! += dy * force;
+        target.vx! -= dx * force;
+        target.vy! -= dy * force;
     }
+
+    // Update positions
+    for (const node of this.nodes) {
+        if (this.draggedNode === node) continue;
+        node.vx! *= damping;
+        node.vy! *= damping;
+        node.x! += node.vx!;
+        node.y! += node.vy!;
+    }
+
+    // Slow down over time
+    const maxVelocity = Math.max(...this.nodes.map(n =>
+        Math.sqrt(n.vx! * n.vx! + n.vy! * n.vy!)
+    ));
+    if (maxVelocity < 0.1) {
+        this.isSimulating = false;
+        console.log('[Tag-Link Graph] Simulation settled');
+    }
+}
+
+draw() {
+    const ctx = this.ctx;
+    const rect = this.canvas.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
+    
+    ctx.clearRect(0, 0, width, height);
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+
+    // Subtle glow background
+    const gradient = ctx.createRadialGradient(
+        width / 2,
+        height / 2,
+        Math.min(width, height) * 0.1,
+        width / 2,
+        height / 2,
+        Math.max(width, height)
+    );
+    gradient.addColorStop(0, 'rgba(98, 114, 164, 0.12)');
+    gradient.addColorStop(1, 'rgba(10, 10, 20, 0.08)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+
+    // Draw links
+    for (const link of this.links) {
+        const source = this.nodes.find(n => n.id === link.source);
+        const target = this.nodes.find(n => n.id === link.target);
+        if (!source || !target) continue;
+
+        let color = '#6272a4';
+        if (link.sharedTagCount >= 5) color = '#ff5555';
+        else if (link.sharedTagCount >= 3) color = '#f1fa8c';
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.min(link.sharedTagCount, 5);
+        ctx.globalAlpha = 0.6;
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = color;
+        ctx.beginPath();
+        ctx.moveTo(source.x!, source.y!);
+        ctx.lineTo(target.x!, target.y!);
+        ctx.stroke();
+    }
+
+    // Draw nodes
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+    for (const node of this.nodes) {
+        // Node circle
+        ctx.fillStyle = '#bd93f9';
+        ctx.shadowColor = '#bd93f9';
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.arc(node.x!, node.y!, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#44475a';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Node label
+        ctx.fillStyle = '#f8f8f2';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(node.label, node.x!, node.y! - 15);
+    }
+
+    ctx.restore();
+}
 
     onMouseDown(e: MouseEvent) {
         const rect = this.canvas.getBoundingClientRect();
