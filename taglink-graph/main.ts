@@ -1,6 +1,6 @@
 // main.ts
 // Modified by ChatGPT Codex 2025-12-05
-import { Plugin, TFile, ItemView, WorkspaceLeaf, Notice } from 'obsidian';
+import { Plugin, TFile, ItemView, WorkspaceLeaf, Notice, PluginSettingTab, App, Setting } from 'obsidian';
 
 interface TagLinkData {
     source: string;
@@ -20,6 +20,16 @@ interface GraphNode {
 }
 
 const VIEW_TYPE_TAG_GRAPH = 'tag-link-graph-view';
+
+interface TagLinkGraphSettings {
+    ignoredNotePatterns: string;
+    ignoreOrphans: boolean;
+}
+
+const DEFAULT_SETTINGS: TagLinkGraphSettings = {
+    ignoredNotePatterns: '',
+    ignoreOrphans: false,
+};
 
 class TagLinkGraphView extends ItemView {
     plugin: TagLinkGraphPlugin;
@@ -143,20 +153,44 @@ resizeCanvas() {
     console.log('[Tag-Link Graph] Canvas resized', { width, height, pixelRatio });
 }
 
-async loadGraph() {
-    try {
-        console.log('[Tag-Link Graph] Starting graph load...');
-        const files = this.plugin.getDailyNotes();
-        console.log('[Tag-Link Graph] Daily note candidates', files.map(f => f.path));
+    async loadGraph() {
+        try {
+            console.log('[Tag-Link Graph] Starting graph load...');
+            const files = this.plugin.getTargetNotes();
+            console.log('[Tag-Link Graph] Note candidates', files.map(f => f.path));
 
-        if (files.length === 0) {
-            new Notice('No daily notes found!');
-            this.legend.setText('No daily notes with tags were found.');
-            return;
-        }
+            if (files.length === 0) {
+                new Notice('No notes found to build the tag graph.');
+                this.legend.setText('No notes with tags were found.');
+                return;
+            }
 
-        const noteToTags = await this.plugin.buildNoteTagsMap(files);
-        this.links = this.plugin.generateTagConnections(noteToTags);
+            const noteToTags = await this.plugin.buildNoteTagsMap(files);
+            this.links = this.plugin.generateTagConnections(noteToTags);
+
+            let nodeFiles = files.filter(file => noteToTags.has(file.path));
+
+            if (this.plugin.settings.ignoreOrphans) {
+                const connectedPaths = new Set<string>();
+                this.links.forEach(link => {
+                    connectedPaths.add(link.source);
+                    connectedPaths.add(link.target);
+                });
+
+                nodeFiles = nodeFiles.filter(file => connectedPaths.has(file.path));
+                this.links = this.links.filter(link => connectedPaths.has(link.source) && connectedPaths.has(link.target));
+
+                console.log('[Tag-Link Graph] Filtered orphans', {
+                    nodes: nodeFiles.length,
+                    connections: this.links.length
+                });
+            }
+
+            if (nodeFiles.length === 0) {
+                new Notice('No notes with shared tags were found.');
+                this.legend.setText('No tag connections found.');
+                return;
+            }
 
         if (noteToTags.size === 0) {
             new Notice('No tags found in the scanned daily notes.');
@@ -170,7 +204,7 @@ async loadGraph() {
         
         console.log('[Tag-Link Graph] Initializing nodes at center:', center);
         
-        this.nodes = files
+        this.nodes = nodeFiles
             .filter(file => noteToTags.has(file.path))
             .map(file => ({
                 id: file.path,
@@ -459,8 +493,11 @@ draw() {
 }
 
 export default class TagLinkGraphPlugin extends Plugin {
+    settings!: TagLinkGraphSettings;
+
     async onload() {
         console.log('Loading Tag-Link Graph Plugin');
+        await this.loadSettings();
 
         // Register the custom view
         this.registerView(
@@ -486,6 +523,8 @@ export default class TagLinkGraphPlugin extends Plugin {
         this.addRibbonIcon('git-fork', 'Tag-Connected Graph', () => {
             this.openVisualGraph();
         });
+
+        this.addSettingTab(new TagLinkGraphSettingTab(this.app, this));
     }
 
     async openVisualGraph() {
@@ -506,18 +545,29 @@ export default class TagLinkGraphPlugin extends Plugin {
     async openTagLinkReport() {
         try {
             console.log('[Tag-Link Graph] Starting tag-link report generation');
-            const files = this.getDailyNotes();
+            let files = this.getTargetNotes();
 
             if (files.length === 0) {
-                new Notice('No daily notes found!');
-                console.log('[Tag-Link Graph] No daily notes found during report generation');
+                new Notice('No notes found!');
+                console.log('[Tag-Link Graph] No notes found during report generation');
                 return;
             }
 
-            new Notice(`Found ${files.length} daily notes. Building report...`);
+            new Notice(`Found ${files.length} notes. Building report...`);
 
             const noteToTags = await this.buildNoteTagsMap(files);
-            const connections = this.generateTagConnections(noteToTags);
+            let connections = this.generateTagConnections(noteToTags);
+
+            if (this.settings.ignoreOrphans) {
+                const connectedPaths = new Set<string>();
+                connections.forEach(link => {
+                    connectedPaths.add(link.source);
+                    connectedPaths.add(link.target);
+                });
+
+                files = files.filter(file => connectedPaths.has(file.path));
+                connections = connections.filter(link => connectedPaths.has(link.source) && connectedPaths.has(link.target));
+            }
 
             if (connections.length === 0) {
                 new Notice('No shared tags found between notes!');
@@ -534,15 +584,27 @@ export default class TagLinkGraphPlugin extends Plugin {
         }
     }
 
-    getDailyNotes(): TFile[] {
-        console.log('[Tag-Link Graph] Scanning vault for daily notes...');
+    getTargetNotes(): TFile[] {
+        console.log('[Tag-Link Graph] Scanning vault for markdown notes...');
         const allFiles = this.app.vault.getMarkdownFiles();
+        const filtered = allFiles.filter(file => !this.shouldIgnoreFile(file));
 
-        return allFiles.filter(file => {
-            const isDailyFolder = file.path.startsWith('Daily/');
-            const isDailyPattern = /\d{4}-\d{2}-\d{2}/.test(file.basename);
-            return isDailyFolder || isDailyPattern;
+        console.log('[Tag-Link Graph] Notes after ignore filters', {
+            total: allFiles.length,
+            included: filtered.length,
+            ignoredPatterns: this.settings.ignoredNotePatterns
         });
+
+        return filtered;
+    }
+
+    private shouldIgnoreFile(file: TFile): boolean {
+        const patterns = this.settings.ignoredNotePatterns
+            .split(/\r?\n/)
+            .map(pattern => pattern.trim())
+            .filter(Boolean);
+
+        return patterns.some(pattern => file.path.includes(pattern));
     }
 
     async buildNoteTagsMap(files: TFile[]): Promise<Map<string, Set<string>>> {
@@ -624,7 +686,7 @@ export default class TagLinkGraphPlugin extends Plugin {
 
         console.log('[Tag-Link Graph] Writing markdown report to', graphPath);
 
-        let content = '# Tag-Connected Daily Notes Report\n\n';
+        let content = '# Tag-Connected Notes Report\n\n';
         content += `Generated: ${new Date().toLocaleString()}\n\n`;
         content += `**${files.length} notes** connected by **${connections.length} shared-tag relationships**\n\n`;
 
@@ -673,5 +735,50 @@ export default class TagLinkGraphPlugin extends Plugin {
 
     onunload() {
         console.log('Unloading Tag-Link Graph Plugin');
+    }
+
+    async loadSettings() {
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    }
+
+    async saveSettings() {
+        await this.saveData(this.settings);
+    }
+}
+
+class TagLinkGraphSettingTab extends PluginSettingTab {
+    plugin: TagLinkGraphPlugin;
+
+    constructor(app: App, plugin: TagLinkGraphPlugin) {
+        super(app, plugin);
+        this.plugin = plugin;
+    }
+
+    display(): void {
+        const { containerEl } = this;
+        containerEl.empty();
+
+        containerEl.createEl('h2', { text: 'Tag-Link Graph Settings' });
+
+        new Setting(containerEl)
+            .setName('Ignore notes by path')
+            .setDesc('Enter substrings (one per line). Any note whose path contains one of these substrings will be skipped.')
+            .addTextArea(text => text
+                .setPlaceholder('e.g. Templates/\nArchive\nPrivate.md')
+                .setValue(this.plugin.settings.ignoredNotePatterns)
+                .onChange(async (value) => {
+                    this.plugin.settings.ignoredNotePatterns = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Ignore orphaned notes')
+            .setDesc('When enabled, notes without any shared tag connections are removed from the graph and report.')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.ignoreOrphans)
+                .onChange(async (value) => {
+                    this.plugin.settings.ignoreOrphans = value;
+                    await this.plugin.saveSettings();
+                }));
     }
 }
