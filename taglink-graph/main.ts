@@ -1,4 +1,5 @@
 // main.ts
+// Modified by ChatGPT Codex 2025-05-14
 import { Plugin, TFile, ItemView, WorkspaceLeaf, Notice } from 'obsidian';
 
 interface TagLinkData {
@@ -48,7 +49,7 @@ class TagLinkGraphView extends ItemView {
     }
 
     async onOpen() {
-        const container = this.containerEl.children[1];
+        const container = this.contentEl;
         container.empty();
         container.addClass('tag-link-graph-view');
 
