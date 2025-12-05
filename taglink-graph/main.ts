@@ -1,5 +1,5 @@
 // main.ts
-// Modified by ChatGPT Codex 2025-05-14
+// Modified by ChatGPT Codex 2025-05-15
 import { Plugin, TFile, ItemView, WorkspaceLeaf, Notice } from 'obsidian';
 
 interface TagLinkData {
@@ -25,6 +25,11 @@ class TagLinkGraphView extends ItemView {
     plugin: TagLinkGraphPlugin;
     canvas: HTMLCanvasElement;
     ctx: CanvasRenderingContext2D;
+    resizeObserver: ResizeObserver | null = null;
+    handleMouseDown = this.onMouseDown.bind(this);
+    handleMouseMove = this.onMouseMove.bind(this);
+    handleMouseUp = this.onMouseUp.bind(this);
+    handleDoubleClick = this.onDoubleClick.bind(this);
     nodes: GraphNode[] = [];
     links: TagLinkData[] = [];
     isDragging = false;
@@ -53,29 +58,43 @@ class TagLinkGraphView extends ItemView {
         container.empty();
         container.addClass('tag-link-graph-view');
 
-        // Create canvas
-        this.canvas = container.createEl('canvas');
-        this.canvas.width = container.clientWidth;
-        this.canvas.height = container.clientHeight;
+        // Create canvas wrapper so it can inherit height from the pane
+        const wrapper = container.createEl('div', { cls: 'tag-link-graph-wrapper' });
+        this.canvas = wrapper.createEl('canvas');
+        this.canvas.style.width = '100%';
+        this.canvas.style.height = '100%';
         this.ctx = this.canvas.getContext('2d')!;
+        this.resizeCanvas();
 
         // Add mouse interaction
-        this.canvas.addEventListener('mousedown', this.onMouseDown.bind(this));
-        this.canvas.addEventListener('mousemove', this.onMouseMove.bind(this));
-        this.canvas.addEventListener('mouseup', this.onMouseUp.bind(this));
-        this.canvas.addEventListener('dblclick', this.onDoubleClick.bind(this));
+        this.canvas.addEventListener('mousedown', this.handleMouseDown);
+        this.canvas.addEventListener('mousemove', this.handleMouseMove);
+        this.canvas.addEventListener('mouseup', this.handleMouseUp);
+        this.canvas.addEventListener('dblclick', this.handleDoubleClick);
 
         // Handle resize
-        const resizeObserver = new ResizeObserver(() => {
-            this.canvas.width = container.clientWidth;
-            this.canvas.height = container.clientHeight;
+        this.resizeObserver = new ResizeObserver(() => {
+            this.resizeCanvas();
             this.draw();
         });
-        resizeObserver.observe(container);
+        this.resizeObserver.observe(container);
 
         // Load and display graph
         await this.loadGraph();
         this.startSimulation();
+    }
+
+    resizeCanvas() {
+        // Respect the rendered size (CSS) while providing a crisp canvas
+        const { width, height } = this.canvas.getBoundingClientRect();
+
+        if (width === 0 || height === 0) return;
+
+        const pixelRatio = window.devicePixelRatio || 1;
+        this.canvas.width = width * pixelRatio;
+        this.canvas.height = height * pixelRatio;
+        this.ctx?.setTransform(1, 0, 0, 1, 0, 0);
+        this.ctx?.scale(pixelRatio, pixelRatio);
     }
 
     async loadGraph() {
@@ -276,7 +295,11 @@ class TagLinkGraphView extends ItemView {
     }
 
     async onClose() {
-        // Cleanup
+        this.resizeObserver?.disconnect();
+        this.canvas?.removeEventListener('mousedown', this.handleMouseDown);
+        this.canvas?.removeEventListener('mousemove', this.handleMouseMove);
+        this.canvas?.removeEventListener('mouseup', this.handleMouseUp);
+        this.canvas?.removeEventListener('dblclick', this.handleDoubleClick);
     }
 }
 
