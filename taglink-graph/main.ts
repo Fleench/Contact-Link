@@ -168,68 +168,68 @@ resizeCanvas() {
             const noteToTags = await this.plugin.buildNoteTagsMap(files);
             this.links = this.plugin.generateTagConnections(noteToTags);
 
-            let nodeFiles = files.filter(file => noteToTags.has(file.path));
+            const allTags = this.plugin.collectAllTags(noteToTags);
+            let tagNodes = Array.from(allTags);
 
             if (this.plugin.settings.ignoreOrphans) {
-                const connectedPaths = new Set<string>();
+                const connectedTags = new Set<string>();
                 this.links.forEach(link => {
-                    connectedPaths.add(link.source);
-                    connectedPaths.add(link.target);
+                    connectedTags.add(link.source);
+                    connectedTags.add(link.target);
                 });
 
-                nodeFiles = nodeFiles.filter(file => connectedPaths.has(file.path));
-                this.links = this.links.filter(link => connectedPaths.has(link.source) && connectedPaths.has(link.target));
+                tagNodes = tagNodes.filter(tag => connectedTags.has(tag));
+                this.links = this.links.filter(link => connectedTags.has(link.source) && connectedTags.has(link.target));
 
-                console.log('[Tag-Link Graph] Filtered orphans', {
-                    nodes: nodeFiles.length,
+                console.log('[Tag-Link Graph] Filtered orphaned tags', {
+                    nodes: tagNodes.length,
                     connections: this.links.length
                 });
             }
 
-            if (nodeFiles.length === 0) {
-                new Notice('No notes with shared tags were found.');
-                this.legend.setText('No tag connections found.');
+            if (tagNodes.length === 0 || this.links.length === 0) {
+                new Notice('No line-level tag co-occurrences found.');
+                this.legend.setText('No line-level tag connections found.');
                 return;
             }
 
-        if (noteToTags.size === 0) {
-            new Notice('No tags found in the scanned daily notes.');
-            this.legend.setText('No tags found in the scanned daily notes.');
-            return;
+            if (noteToTags.size === 0) {
+                new Notice('No tags found in the scanned notes.');
+                this.legend.setText('No tags found in the scanned notes.');
+                return;
+            }
+
+            // Use CSS dimensions (not canvas.width/height which are scaled by pixelRatio)
+            const rect = this.canvas.getBoundingClientRect();
+            const center = { x: rect.width / 2, y: rect.height / 2 };
+
+            console.log('[Tag-Link Graph] Initializing nodes at center:', center);
+
+            this.nodes = tagNodes
+                .map(tag => ({
+                    id: tag,
+                    label: `#${tag}`,
+                    path: tag,
+                    x: center.x + (Math.random() - 0.5) * 100,
+                    y: center.y + (Math.random() - 0.5) * 100,
+                    vx: 0,
+                    vy: 0
+                }));
+
+            console.log('[Tag-Link Graph] Nodes initialized:', this.nodes.map(n =>
+                ({label: n.label, x: n.x, y: n.y})
+            ));
+
+            const legendText = `${this.nodes.length} tags, ${this.links.length} line-level tag links`;
+            this.legend.setText(legendText);
+            new Notice(`Loaded ${legendText}`);
+            console.log('[Tag-Link Graph] Graph data ready', { nodes: this.nodes.length, links: this.links.length });
+        } catch (error) {
+            console.error('[Tag-Link Graph] Error while loading graph:', error);
+            new Notice('Error loading tag graph. Check console for details.');
+            this.legend.setText('Failed to load graph');
         }
-
-        // Use CSS dimensions (not canvas.width/height which are scaled by pixelRatio)
-        const rect = this.canvas.getBoundingClientRect();
-        const center = { x: rect.width / 2, y: rect.height / 2 };
-        
-        console.log('[Tag-Link Graph] Initializing nodes at center:', center);
-        
-        this.nodes = nodeFiles
-            .filter(file => noteToTags.has(file.path))
-            .map(file => ({
-                id: file.path,
-                label: file.basename,
-                path: file.path,
-                x: center.x + (Math.random() - 0.5) * 100,
-                y: center.y + (Math.random() - 0.5) * 100,
-                vx: 0,
-                vy: 0
-            }));
-
-        console.log('[Tag-Link Graph] Nodes initialized:', this.nodes.map(n => 
-            ({label: n.label, x: n.x, y: n.y})
-        ));
-
-        const legendText = `${this.nodes.length} notes, ${this.links.length} tag links`;
-        this.legend.setText(legendText);
-        new Notice(`Loaded ${legendText}`);
-        console.log('[Tag-Link Graph] Graph data ready', { nodes: this.nodes.length, links: this.links.length });
-    } catch (error) {
-        console.error('[Tag-Link Graph] Error while loading graph:', error);
-        new Notice('Error loading tag graph. Check console for details.');
-        this.legend.setText('Failed to load graph');
     }
-}
 
 updatePhysics() {
     if (this.nodes.length === 0) return;
@@ -545,7 +545,7 @@ export default class TagLinkGraphPlugin extends Plugin {
     async openTagLinkReport() {
         try {
             console.log('[Tag-Link Graph] Starting tag-link report generation');
-            let files = this.getTargetNotes();
+            const files = this.getTargetNotes();
 
             if (files.length === 0) {
                 new Notice('No notes found!');
@@ -557,25 +557,26 @@ export default class TagLinkGraphPlugin extends Plugin {
 
             const noteToTags = await this.buildNoteTagsMap(files);
             let connections = this.generateTagConnections(noteToTags);
+            let tags = Array.from(this.collectAllTags(noteToTags));
 
             if (this.settings.ignoreOrphans) {
-                const connectedPaths = new Set<string>();
+                const connectedTags = new Set<string>();
                 connections.forEach(link => {
-                    connectedPaths.add(link.source);
-                    connectedPaths.add(link.target);
+                    connectedTags.add(link.source);
+                    connectedTags.add(link.target);
                 });
 
-                files = files.filter(file => connectedPaths.has(file.path));
-                connections = connections.filter(link => connectedPaths.has(link.source) && connectedPaths.has(link.target));
+                tags = tags.filter(tag => connectedTags.has(tag));
+                connections = connections.filter(link => connectedTags.has(link.source) && connectedTags.has(link.target));
             }
 
-            if (connections.length === 0) {
-                new Notice('No shared tags found between notes!');
+            if (connections.length === 0 || tags.length === 0) {
+                new Notice('No line-level tag co-occurrences found!');
                 console.log('[Tag-Link Graph] No connections detected for report');
                 return;
             }
 
-            await this.createGraphVisualization(files, connections);
+            await this.createGraphVisualization(tags.length, connections, files.length);
             new Notice(`Created report with ${connections.length} connections!`);
 
         } catch (error) {
@@ -607,71 +608,104 @@ export default class TagLinkGraphPlugin extends Plugin {
         return patterns.some(pattern => file.path.includes(pattern));
     }
 
-    async buildNoteTagsMap(files: TFile[]): Promise<Map<string, Set<string>>> {
-        const noteToTags = new Map<string, Set<string>>();
+    async buildNoteTagsMap(files: TFile[]): Promise<Map<string, Map<number, Set<string>>>> {
+        const noteToTags = new Map<string, Map<number, Set<string>>>();
 
         for (const file of files) {
-            const tags = new Set<string>();
+            const perLineTags = new Map<number, Set<string>>();
 
             const metadata = this.app.metadataCache.getFileCache(file);
-            
+
             if (metadata?.tags) {
                 metadata.tags.forEach(tag => {
                     const cleanTag = tag.tag.startsWith('#') ? tag.tag.slice(1) : tag.tag;
-                    tags.add(cleanTag);
+                    const lineTags = perLineTags.get(0) ?? new Set<string>();
+                    lineTags.add(cleanTag);
+                    perLineTags.set(0, lineTags);
                 });
             }
 
             const content = await this.app.vault.read(file);
             const inlineTags = this.extractInlineTags(content);
-            inlineTags.forEach(tag => tags.add(tag));
 
-            if (tags.size > 0) {
-                noteToTags.set(file.path, tags);
-                console.log('[Tag-Link Graph] Tags found for file', file.path, Array.from(tags));
+            inlineTags.forEach((tags, lineNumber) => {
+                const existing = perLineTags.get(lineNumber) ?? new Set<string>();
+                tags.forEach(tag => existing.add(tag));
+                perLineTags.set(lineNumber, existing);
+            });
+
+            const hasTags = Array.from(perLineTags.values()).some(set => set.size > 0);
+
+            if (hasTags) {
+                noteToTags.set(file.path, perLineTags);
+                console.log('[Tag-Link Graph] Tags found for file', file.path, Array.from(perLineTags.entries()));
             }
         }
 
         return noteToTags;
     }
 
-    extractInlineTags(content: string): string[] {
+    extractInlineTags(content: string): Map<number, string[]> {
         const tagRegex = /#([a-zA-Z][a-zA-Z0-9/_-]*)/g;
-        const tags: string[] = [];
-        let match;
+        const tagsByLine = new Map<number, string[]>();
 
-        while ((match = tagRegex.exec(content)) !== null) {
-            tags.push(match[1]);
-        }
+        const lines = content.split(/\r?\n/);
 
-        return tags;
+        lines.forEach((line, index) => {
+            const tags: string[] = [];
+            let match;
+
+            tagRegex.lastIndex = 0;
+
+            while ((match = tagRegex.exec(line)) !== null) {
+                tags.push(match[1]);
+            }
+
+            if (tags.length > 0) {
+                tagsByLine.set(index + 1, tags);
+            }
+        });
+
+        return tagsByLine;
     }
 
-    generateTagConnections(noteToTags: Map<string, Set<string>>): TagLinkData[] {
-        const connections: TagLinkData[] = [];
-        const paths = Array.from(noteToTags.keys());
+    generateTagConnections(noteToTags: Map<string, Map<number, Set<string>>>): TagLinkData[] {
+        const pairCounts = new Map<string, { sharedTagCount: number; sharedTags: string[] }>();
 
-        console.log('[Tag-Link Graph] Building connections across notes');
+        console.log('[Tag-Link Graph] Building line-level tag co-occurrence connections');
 
-        for (let i = 0; i < paths.length; i++) {
-            for (let j = i + 1; j < paths.length; j++) {
-                const path1 = paths[i];
-                const path2 = paths[j];
-                const tags1 = noteToTags.get(path1)!;
-                const tags2 = noteToTags.get(path2)!;
+        for (const [, lineMap] of noteToTags) {
+            for (const [, tags] of lineMap) {
+                if (tags.size < 2) continue;
 
-                const commonTags = Array.from(tags1).filter(tag => tags2.has(tag));
+                const uniqueTags = Array.from(tags).sort();
 
-                if (commonTags.length > 0) {
-                    connections.push({
-                        source: path1,
-                        target: path2,
-                        sharedTagCount: commonTags.length,
-                        sharedTags: commonTags
-                    });
+                for (let i = 0; i < uniqueTags.length; i++) {
+                    for (let j = i + 1; j < uniqueTags.length; j++) {
+                        const source = uniqueTags[i];
+                        const target = uniqueTags[j];
+                        const key = `${source}|${target}`;
+
+                        if (!pairCounts.has(key)) {
+                            pairCounts.set(key, { sharedTagCount: 0, sharedTags: [source, target] });
+                        }
+
+                        const data = pairCounts.get(key)!;
+                        data.sharedTagCount += 1;
+                    }
                 }
             }
         }
+
+        const connections: TagLinkData[] = Array.from(pairCounts.entries()).map(([key, data]) => {
+            const [source, target] = key.split('|');
+            return {
+                source,
+                target,
+                sharedTagCount: data.sharedTagCount,
+                sharedTags: data.sharedTags
+            };
+        });
 
         connections.sort((a, b) => b.sharedTagCount - a.sharedTagCount);
 
@@ -680,34 +714,44 @@ export default class TagLinkGraphPlugin extends Plugin {
         return connections;
     }
 
-    async createGraphVisualization(files: TFile[], connections: TagLinkData[]) {
+    collectAllTags(noteToTags: Map<string, Map<number, Set<string>>>): Set<string> {
+        const tags = new Set<string>();
+
+        for (const [, lineMap] of noteToTags) {
+            for (const [, lineTags] of lineMap) {
+                lineTags.forEach(tag => tags.add(tag));
+            }
+        }
+
+        return tags;
+    }
+
+    async createGraphVisualization(tagCount: number, connections: TagLinkData[], noteCount: number) {
         const graphFileName = 'Tag-Link Graph Report.md';
         const graphPath = `${graphFileName}`;
 
         console.log('[Tag-Link Graph] Writing markdown report to', graphPath);
 
-        let content = '# Tag-Connected Notes Report\n\n';
+        let content = '# Tag Co-occurrence Report\n\n';
         content += `Generated: ${new Date().toLocaleString()}\n\n`;
-        content += `**${files.length} notes** connected by **${connections.length} shared-tag relationships**\n\n`;
+        content += `**${tagCount} tags** across **${noteCount} notes** with **${connections.length} line-level connections**\n\n`;
 
         const strong = connections.filter(c => c.sharedTagCount >= 5);
         const medium = connections.filter(c => c.sharedTagCount >= 3 && c.sharedTagCount < 5);
         const weak = connections.filter(c => c.sharedTagCount < 3);
 
         content += '## Connection Strength\n\n';
-        content += `- ?? Strong (5+ tags): ${strong.length} connections\n`;
-        content += `- ?? Medium (3-4 tags): ${medium.length} connections\n`;
-        content += `- ?? Weak (1-2 tags): ${weak.length} connections\n\n`;
+        content += `- ?? Strong (5+ co-occurring lines): ${strong.length} connections\n`;
+        content += `- ?? Medium (3-4 co-occurring lines): ${medium.length} connections\n`;
+        content += `- ?? Weak (1-2 co-occurring lines): ${weak.length} connections\n\n`;
 
         content += '## All Connections\n\n';
         
         for (const conn of connections) {
-            const sourceName = this.getNoteName(conn.source);
-            const targetName = this.getNoteName(conn.target);
             const emoji = conn.sharedTagCount >= 5 ? '??' : conn.sharedTagCount >= 3 ? '??' : '??';
-            
-            content += `### ${emoji} [[${sourceName}]]  [[${targetName}]]\n`;
-            content += `**${conn.sharedTagCount} shared tags:** ${conn.sharedTags.map(t => `#${t}`).join(', ')}\n\n`;
+
+            content += `### ${emoji} #${conn.source}  #${conn.target}\n`;
+            content += `**${conn.sharedTagCount} line(s) with both tags:** ${conn.sharedTags.map(t => `#${t}`).join(', ')}\n\n`;
         }
 
         const existingFile = this.app.vault.getAbstractFileByPath(graphPath);
